@@ -86,6 +86,7 @@ export type Settings = {
   extra: Exercise[]
   foods: Food[]
   meals: Meal[]
+  ready?: boolean // the first run screen is done
 }
 
 /** Bump when a stored field changes shape, and add the step to MIGRATIONS in store.ts. */

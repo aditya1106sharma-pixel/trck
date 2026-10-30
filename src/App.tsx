@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { addDays, diffDays, fmt, todayKey } from './lib/dates'
 import { useStore } from './lib/store'
+import { showSetup } from './lib/setup'
 import { Fuel } from './screens/Fuel'
 import { Muscles } from './screens/Muscles'
 import { Plan } from './screens/Plan'
 import { Progress } from './screens/Progress'
+import { Setup } from './screens/Setup'
 import { Today } from './screens/Today'
 import { Train } from './screens/Train'
 import { useSync } from './lib/sync'
@@ -34,6 +36,17 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
   const toast = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 2200) }
+
+  if (showSetup(store.data, { locked: store.locked, loading: sync.loading, email: sync.email, state: sync.state })) {
+    return (
+      <>
+        <header className="top"><div className="brand">TRC<i>K</i></div></header>
+        <main><Setup store={store} sync={sync} today={today} toast={toast} /></main>
+        <UpdateBar />
+        {msg && <div className="toast" role="status">{msg}</div>}
+      </>
+    )
+  }
 
   const Screen = TABS.find((t) => t[0] === tab)![2]
   const dayN = diffDays(sel, store.data.settings.start) + 1
