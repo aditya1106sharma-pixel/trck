@@ -8,6 +8,7 @@ import { Progress } from './screens/Progress'
 import { Today } from './screens/Today'
 import { Train } from './screens/Train'
 import { useSync } from './lib/sync'
+import { UpdateBar } from './ui/UpdateBar'
 
 const TABS = [['today', 'Today', Today], ['train', 'Train', Train], ['muscles', 'Muscles', Muscles], ['fuel', 'Fuel', Fuel], ['progress', 'Progress', Progress], ['plan', 'Plan', Plan]] as const
 type Tab = (typeof TABS)[number][0]
@@ -52,9 +53,11 @@ export default function App() {
         <div className="daynote"><span>Editing <b>{fmt(sel, { weekday: 'long', day: 'numeric', month: 'short' })}</b>{dayN > 0 ? ` · day ${dayN}` : ''}</span>
           <button className="btn ghost sm" onClick={() => setSel(today)}>Back to today</button></div>
       )}
+      {store.locked && <div className="warnbar" role="alert">The data on this device is from a newer version of TRCK. Close and reopen the app to update. Nothing you change is saved until then.</div>}
       <main>
         <Screen store={store} sel={sel} today={today} toast={toast} sync={sync} />
       </main>
+      <UpdateBar />
       {msg && <div className="toast" role="status">{msg}</div>}
       <nav className="tabs" aria-label="Sections">
         <div>

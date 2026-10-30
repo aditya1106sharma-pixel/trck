@@ -1,8 +1,55 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { blankDay, DEFAULT_SETTINGS, type AppData, type Day, type Settings } from './types'
+import { blankDay, DEFAULT_SETTINGS, SCHEMA_VERSION, type AppData, type Day, type Settings } from './types'
 
 const KEY = 'trck:v1'
 const OLD_KEY = 'recomp-log-v1' // the first prototype, same origin only if it was ever hosted here
+const BACKUP_KEY = 'trck:backups'
+export const MAX_BACKUPS = 5
+
+type Raw = Record<string, unknown>
+export type Migration = (raw: Raw) => Raw
+/** MIGRATIONS[n] turns stored version n into n + 1. Never rename a field: add the new one and keep the old. */
+export const MIGRATIONS: Record<number, Migration> = {}
+
+/** Brings stored data up to `target`. Data with no version is the prototype export, which is version 1. */
+export function migrate(raw: Raw, migrations: Record<number, Migration> = MIGRATIONS, target = SCHEMA_VERSION): Raw {
+  let v = typeof raw.version === 'number' ? raw.version : 1
+  if (v > target) throw new Error('This data is from a newer version of TRCK. Reload the app to update, then try again.')
+  let cur = raw
+  while (v < target) {
+    const step = migrations[v]
+    if (!step) throw new Error(`Cannot upgrade this data from version ${v}.`)
+    cur = { ...step(cur), version: v + 1 }
+    v += 1
+  }
+  return cur
+}
+
+export type Backup = { at: number; reason: string; json: string }
+type Mem = Pick<Storage, 'getItem' | 'setItem'>
+
+export function addBackup(list: Backup[], b: Backup, max = MAX_BACKUPS): Backup[] {
+  return [...list, b].slice(-max)
+}
+
+export function readBackups(mem: Mem = localStorage): Backup[] {
+  try {
+    const raw = JSON.parse(mem.getItem(BACKUP_KEY) ?? '[]')
+    return Array.isArray(raw) ? raw.filter((b): b is Backup => !!b && typeof b.json === 'string' && typeof b.at === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+/** Keeps the last 5 snapshots. If storage is nearly full it keeps fewer, down to just this one. */
+export function saveBackup(json: string, reason: string, mem: Mem = localStorage, now = Date.now()): void {
+  const list = readBackups(mem)
+  if (list[list.length - 1]?.json === json) return
+  const next = addBackup(list, { at: now, reason, json })
+  for (const keep of [MAX_BACKUPS, 2, 1]) {
+    try { mem.setItem(BACKUP_KEY, JSON.stringify(next.slice(-keep))); return } catch { /* try fewer */ }
+  }
+}
 
 export function normDay(raw: Partial<Day> | undefined): Day {
   const b = blankDay()
@@ -26,45 +73,72 @@ export function normSettings(raw: Partial<Settings> | undefined): Settings {
 
 /** Accepts a TRCK export ({days, settings}) or the prototype export ({days, cfg}). */
 export function parseImport(text: string): AppData {
-  const j = JSON.parse(text) as { days?: Record<string, Partial<Day>>; settings?: Partial<Settings>; cfg?: Partial<Settings> }
-  if (!j || typeof j !== 'object' || !j.days || typeof j.days !== 'object') throw new Error('No days found in this file.')
+  const parsed: unknown = JSON.parse(text)
+  if (!parsed || typeof parsed !== 'object') throw new Error('No days found in this file.')
+  const j = migrate(parsed as Raw) as { days?: Record<string, Partial<Day>>; settings?: Partial<Settings>; cfg?: Partial<Settings> }
+  if (!j.days || typeof j.days !== 'object') throw new Error('No days found in this file.')
   const days: Record<string, Day> = {}
   for (const [k, v] of Object.entries(j.days)) if (/^\d{4}-\d{2}-\d{2}$/.test(k)) days[k] = normDay(v)
-  return { version: 1, days, settings: normSettings(j.settings ?? j.cfg), su: typeof (j as { su?: number }).su === 'number' ? (j as { su?: number }).su : 0 }
+  return { version: SCHEMA_VERSION, days, settings: normSettings(j.settings ?? j.cfg), su: typeof (j as { su?: number }).su === 'number' ? (j as { su?: number }).su : 0 }
 }
 
-function load(): AppData {
+export function storedVersion(raw: string): number {
   try {
-    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY)
-    if (raw) return parseImport(raw)
+    const v = (JSON.parse(raw) as Raw | null)?.version
+    return typeof v === 'number' ? v : 1
   } catch {
-    /* fall through to a clean start */
+    return 1
   }
-  return { version: 1, days: {}, settings: normSettings(undefined), su: 0 }
+}
+
+/** `locked` means the device holds data from a newer TRCK. Nothing may be saved over it until the app is updated. */
+export function loadFrom(raw: string | null, mem: Mem = localStorage): { data: AppData; locked: boolean } {
+  const blank: AppData = { version: SCHEMA_VERSION, days: {}, settings: normSettings(undefined), su: 0 }
+  if (!raw) return { data: blank, locked: false }
+  try {
+    if (storedVersion(raw) < SCHEMA_VERSION) saveBackup(raw, 'before upgrade', mem)
+    return { data: parseImport(raw), locked: false }
+  } catch {
+    saveBackup(raw, 'unreadable', mem)
+    return { data: blank, locked: storedVersion(raw) > SCHEMA_VERSION }
+  }
+}
+
+function load() {
+  let raw: string | null = null
+  try { raw = localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY) } catch { /* private mode */ }
+  return loadFrom(raw)
 }
 
 export type Store = {
   data: AppData
+  /** True when this device holds data from a newer version. Changes are not saved until the app updates. */
+  locked: boolean
   mutate: (key: string, fn: (d: Day) => void) => void
   setSettings: (fn: (s: Settings) => void) => void
-  replace: (d: AppData) => void
+  /** Pass `backup` to snapshot what is on the device first, as an import does. */
+  replace: (d: AppData, backup?: boolean) => void
   saveError: boolean
 }
 
 export function useStore(): Store {
-  const [data, setData] = useState<AppData>(load)
+  const [boot] = useState(load)
+  const [data, setData] = useState<AppData>(boot.data)
   const [saveError, setSaveError] = useState(false)
   const first = useRef(true)
+  const latest = useRef(data)
+  latest.current = data
 
   useEffect(() => {
     if (first.current) { first.current = false; return }
+    if (boot.locked) return
     try {
       localStorage.setItem(KEY, JSON.stringify(data))
       setSaveError(false)
     } catch {
       setSaveError(true)
     }
-  }, [data])
+  }, [data, boot.locked])
 
   const mutate = useCallback((key: string, fn: (d: Day) => void) => {
     setData((prev) => {
@@ -83,9 +157,12 @@ export function useStore(): Store {
     })
   }, [])
 
-  const replace = useCallback((d: AppData) => setData(d), [])
+  const replace = useCallback((d: AppData, backup = false) => {
+    if (backup) saveBackup(JSON.stringify(latest.current), 'before import')
+    setData(d)
+  }, [])
 
-  return { data, mutate, setSettings, replace, saveError }
+  return { data, locked: boot.locked, mutate, setSettings, replace, saveError }
 }
 
 export function exportJson(data: AppData): string {

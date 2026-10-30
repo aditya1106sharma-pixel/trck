@@ -79,7 +79,9 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
       </Section>
 
       <Section title="Your data">
-        <p className="sm mut" style={{ marginBottom: 12 }}>Everything is stored on this device only. Nothing is sent anywhere. Phone and laptop each keep their own copy, so use backup and restore to move between them.</p>
+        <p className="sm mut" style={{ marginBottom: 12 }}>{sync.email
+          ? 'Your log is kept on this device and in your cloud account. Download a backup now and then for your own copy.'
+          : 'Everything is stored on this device only. Nothing is sent anywhere. Phone and laptop each keep their own copy, so use backup and restore to move between them.'}</p>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn acc" onClick={download}>Download backup</button>
           <button className="btn ghost" onClick={() => file.current?.click()}>Restore or import</button>
@@ -91,11 +93,11 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
               const imp = parseImport(await f.text())
               const n = Object.keys(imp.days).length
               if (!window.confirm(`Replace what is on this device with ${n} days from this file?`)) return
-              replace(imp); toast(`Imported ${n} days`)
+              replace(imp, true); toast(`Imported ${n} days`)
             } catch (err) { toast(err instanceof Error ? err.message : 'Could not read that file') }
           }} />
         </div>
-        <p className="sm mut" style={{ marginTop: 10 }}>Import also reads the export from the first prototype.</p>
+        <p className="sm mut" style={{ marginTop: 10 }}>Import also reads the export from the first prototype. Before an import, the last copy on this device is kept, up to five.</p>
         {saveError && <div className="warnbar" role="alert">This device refused to save. Download a backup now.</div>}
       </Section>
 
@@ -109,6 +111,8 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
         <p className="sm mut" style={{ marginBottom: 12 }}>A weekly review you can paste into Claude. It costs nothing and sends nothing by itself.</p>
         <button className="btn ghost" onClick={async () => { try { await navigator.clipboard.writeText(reviewPrompt(data.days, s, today)); toast('Copied') } catch { toast('Copy failed') } }}>Copy review prompt</button>
       </Section>
+
+      <p className="sm mut" style={{ padding: '18px 0' }}>Version <span className="num" data-testid="version">{__APP_VERSION__}</span></p>
     </>
   )
 }

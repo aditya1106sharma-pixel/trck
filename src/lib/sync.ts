@@ -44,7 +44,8 @@ export function useSync(store: Store) {
       }
       setState('ok'); setError('')
     } catch (err) {
-      setState('error'); setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setState('error'); setError(/newer version/.test(msg) ? 'Your cloud copy is from a newer version of TRCK. Update the app, then sync again.' : msg)
     } finally {
       busy.current = false
     }

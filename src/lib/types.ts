@@ -88,8 +88,11 @@ export type Settings = {
   meals: Meal[]
 }
 
+/** Bump when a stored field changes shape, and add the step to MIGRATIONS in store.ts. */
+export const SCHEMA_VERSION = 1
+
 export type AppData = {
-  version: 1
+  version: number
   days: Record<string, Day>
   settings: Settings
   su?: number // settings last changed, ms, used by sync
