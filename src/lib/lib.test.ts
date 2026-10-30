@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays, todayKey, weekStart } from './dates'
 import { advise, fuelData } from './fuel'
 import { band, hoursLeft, overloadHint, prevSession, routine, weekEffective } from './muscles'
-import { parseImport } from './store'
+import { addBackup, loadFrom, MAX_BACKUPS, migrate, parseImport, readBackups, saveBackup, type Migration } from './store'
 import { level, score, streaks } from './score'
 import { blankDay, DEFAULT_SETTINGS, type Day } from './types'
 import { ROUTINE } from './catalog'
@@ -127,6 +127,75 @@ describe('import', () => {
   })
   it('rejects junk', () => { expect(() => parseImport('{"x":1}')).toThrow() })
   it('drops bad date keys', () => { expect(Object.keys(parseImport('{"days":{"nope":{}}}').days)).toHaveLength(0) })
+})
+
+describe('schema version', () => {
+  const addNote: Migration = (r) => ({ ...r, extra: 'kept' })
+  it('treats data with no version as version 1', () => {
+    expect(migrate({ days: {} }, { 1: addNote }, 2)).toMatchObject({ version: 2, extra: 'kept' })
+  })
+  it('runs each step in order and stamps the new version', () => {
+    const steps = { 1: (r: Record<string, unknown>) => ({ ...r, a: 1 }), 2: (r: Record<string, unknown>) => ({ ...r, b: (r.a as number) + 1 }) }
+    expect(migrate({ version: 1 }, steps, 3)).toEqual({ version: 3, a: 1, b: 2 })
+  })
+  it('leaves current data alone', () => {
+    const raw = { version: 1, days: { x: 1 } }
+    expect(migrate(raw, {}, 1)).toBe(raw)
+  })
+  it('refuses data from a newer app instead of dropping fields', () => {
+    expect(() => migrate({ version: 3 }, {}, 2)).toThrow(/newer version/)
+  })
+  it('stops when a step is missing', () => { expect(() => migrate({ version: 1 }, {}, 2)).toThrow(/version 1/) })
+  it('stamps imports with the current version', () => { expect(parseImport('{"days":{}}').version).toBe(1) })
+})
+
+describe('local backups', () => {
+  const mem = () => {
+    const m = new Map<string, string>()
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) } }
+  }
+  it('keeps only the last 5', () => {
+    let list: ReturnType<typeof readBackups> = []
+    for (let i = 1; i <= 7; i++) list = addBackup(list, { at: i, reason: 'import', json: String(i) })
+    expect(list.map((b) => b.json)).toEqual(['3', '4', '5', '6', '7'])
+    expect(MAX_BACKUPS).toBe(5)
+  })
+  it('saves, reads back, and skips an identical copy', () => {
+    const m = mem()
+    saveBackup('{"a":1}', 'before import', m, 10)
+    saveBackup('{"a":1}', 'before import', m, 20)
+    saveBackup('{"a":2}', 'before upgrade', m, 30)
+    expect(readBackups(m).map((b) => [b.at, b.reason])).toEqual([[10, 'before import'], [30, 'before upgrade']])
+  })
+  it('keeps fewer copies when storage is nearly full, and never throws', () => {
+    const m = mem()
+    for (let i = 0; i < 5; i++) saveBackup(`{"n":${i}}`, 'import', m, i)
+    const tight = { getItem: m.getItem, setItem: (k: string, v: string) => { if (v.length > 120) throw new Error('quota'); m.setItem(k, v) } }
+    expect(() => saveBackup('{"n":9}', 'import', tight, 99)).not.toThrow()
+    expect(readBackups(m).at(-1)?.json).toBe('{"n":9}')
+    expect(readBackups(m).length).toBeLessThan(5)
+  })
+  it('locks and keeps a copy when the device holds data from a newer app', () => {
+    const m = mem()
+    const newer = JSON.stringify({ version: 99, days: { '2026-10-30': { w: 4 } } })
+    const r = loadFrom(newer, m)
+    expect(r.locked).toBe(true)
+    expect(r.data.days).toEqual({})
+    expect(readBackups(m)).toMatchObject([{ reason: 'unreadable', json: newer }])
+  })
+  it('keeps a copy of damaged data but still lets the app start', () => {
+    const m = mem()
+    expect(loadFrom('{oops', m).locked).toBe(false)
+    expect(readBackups(m)).toMatchObject([{ reason: 'unreadable', json: '{oops' }])
+  })
+  it('starts clean, with no backup, when nothing is stored', () => {
+    const m = mem()
+    expect(loadFrom(null, m)).toMatchObject({ locked: false, data: { days: {} } })
+    expect(readBackups(m)).toEqual([])
+  })
+  it('ignores a damaged backup list', () => {
+    expect(readBackups({ getItem: () => 'not json', setItem: () => {} })).toEqual([])
+  })
 })
 
 import { mergeData } from './merge'
