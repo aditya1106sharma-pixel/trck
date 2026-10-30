@@ -4,6 +4,7 @@ import { advise, fuelData } from './fuel'
 import { band, hoursLeft, overloadHint, prevSession, routine, weekEffective } from './muscles'
 import { addBackup, loadFrom, MAX_BACKUPS, migrate, parseImport, readBackups, saveBackup, type Migration } from './store'
 import { level, score, streaks } from './score'
+import { applySetup, needsSetup, proteinFor, showSetup, validWeight } from './setup'
 import { blankDay, DEFAULT_SETTINGS, type Day } from './types'
 import { ROUTINE } from './catalog'
 
@@ -127,6 +128,54 @@ describe('import', () => {
   })
   it('rejects junk', () => { expect(() => parseImport('{"x":1}')).toThrow() })
   it('drops bad date keys', () => { expect(Object.keys(parseImport('{"days":{"nope":{}}}').days)).toHaveLength(0) })
+})
+
+describe('first run', () => {
+  const fresh = parseImport('{"days":{}}')
+  it('turns body weight into a protein target to the nearest 5 g', () => {
+    expect(proteinFor(70)).toBe(125)
+    expect(proteinFor(78)).toBe(140)
+  })
+  it('keeps the target in a sane range', () => {
+    expect(proteinFor(30)).toBe(60)
+    expect(proteinFor(250)).toBe(300)
+  })
+  it('accepts only believable weights', () => {
+    expect([29, 30, 250, 251].map(validWeight)).toEqual([false, true, true, false])
+  })
+  it('asks a new account, with no days, to set up', () => { expect(needsSetup(fresh)).toBe(true) })
+  it('never asks someone who already has logged days', () => {
+    expect(needsSetup(parseImport('{"days":{"2026-10-30":{"w":3}}}'))).toBe(false)
+  })
+  it('does not overwrite someone who only changed settings', () => {
+    expect(needsSetup({ ...fresh, su: 1730000000000 })).toBe(false)
+  })
+  it('waits for a signed-in person log before asking, and never when locked', () => {
+    const o = { locked: false, loading: false, email: null as string | null, state: 'signed-out' }
+    expect(showSetup(fresh, o)).toBe(true)
+    expect(showSetup(fresh, { ...o, loading: true })).toBe(false) // still finding out who is signed in
+    expect(showSetup(fresh, { ...o, email: 'a@b.c', state: 'syncing' })).toBe(false)
+    expect(showSetup(fresh, { ...o, email: 'a@b.c', state: 'error' })).toBe(false)
+    expect(showSetup(fresh, { ...o, email: 'a@b.c', state: 'ok' })).toBe(true) // new account, empty cloud
+    expect(showSetup(fresh, { ...o, locked: true })).toBe(false)
+  })
+  it('stops asking once set up, and keeps everything else', () => {
+    const s = { ...DEFAULT_SETTINGS, foods: [{ n: 'Egg', p: 6, f: 5, cb: 0, u: '1', t: 'x' }] }
+    applySetup(s, { protein: 125, start: '2026-11-02' })
+    expect(s).toMatchObject({ protein: 125, start: '2026-11-02', ready: true, kcal: DEFAULT_SETTINGS.kcal })
+    expect(s.foods).toHaveLength(1)
+    expect(needsSetup({ ...fresh, settings: s })).toBe(false)
+  })
+  it('starts a new account clean: no days, and not the old start date', () => {
+    const s = { ...DEFAULT_SETTINGS }
+    applySetup(s, { protein: 125, start: '2027-01-05' })
+    expect(Object.keys(fresh.days)).toHaveLength(0)
+    expect(s.start).not.toBe(DEFAULT_SETTINGS.start)
+  })
+  it('keeps the flag through an import', () => {
+    const j = JSON.stringify({ days: {}, settings: { ...DEFAULT_SETTINGS, ready: true } })
+    expect(parseImport(j).settings.ready).toBe(true)
+  })
 })
 
 describe('schema version', () => {

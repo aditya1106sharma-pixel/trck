@@ -15,13 +15,14 @@ export function useSync(store: Store) {
   const [session, setSession] = useState<Session | null>(null)
   const [state, setState] = useState<SyncState>(syncAvailable ? 'signed-out' : 'off')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(syncAvailable) // true until we know whether someone is signed in
   const dataRef = useRef(store.data)
   dataRef.current = store.data
   const busy = useRef(false)
 
   useEffect(() => {
     if (!client) return
-    client.auth.getSession().then(({ data }) => setSession(data.session))
+    client.auth.getSession().then(({ data }) => setSession(data.session)).catch(() => {}).finally(() => setLoading(false))
     const { data } = client.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => data.subscription.unsubscribe()
   }, [])
@@ -73,5 +74,5 @@ export function useSync(store: Store) {
   }
   const signOut = async () => { await client?.auth.signOut() }
 
-  return { state, error, email: session?.user.email ?? null, signIn, signOut, syncNow }
+  return { state, error, loading, email: session?.user.email ?? null, signIn, signOut, syncNow }
 }
