@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.1 - 2026-10-31
+- Small messages like "Copied" now appear above the "Update ready" bar instead of on top of it.
+
 ## 0.3.0 - 2026-10-31
 - Plan now shows which version of TRCK you are running, at the bottom.
 - When a new version is ready, a small bar says "Update ready". Tap it to reload. No more reloading twice.
