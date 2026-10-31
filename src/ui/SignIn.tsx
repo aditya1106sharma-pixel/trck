@@ -35,7 +35,7 @@ export function SignIn({ onSubmit, onReset, onSendCode, onVerifyCode, toast }: P
     setBusy(false)
     if (m) { toast(m); return }
     setSent(true); setCode(''); cool()
-    toast('Code sent. Check your email, and spam.')
+    toast('Sent. Check your email, and spam.')
   }
   const verify = async () => {
     setBusy(true)
@@ -85,19 +85,21 @@ export function SignIn({ onSubmit, onReset, onSendCode, onVerifyCode, toast }: P
 
   return (
     <div>
-      <p className="sm mut" style={{ marginBottom: 12 }}>No password to remember. We email you a code, you type it here, and your log follows you.</p>
+      <p className="sm mut" style={{ marginBottom: 12 }}>No password to remember. We email you a sign in link. Open it on this phone and your log follows you.</p>
       {emailField}
       {!sent ? (
         <div className="row" style={{ marginTop: 12 }}>
-          <button className="btn acc" disabled={!email.includes('@') || busy} onClick={() => void sendCode()}>Email me a code</button>
+          <button className="btn acc" disabled={!email.includes('@') || busy} onClick={() => void sendCode()}>Email me a sign in link</button>
         </div>
       ) : (
         <>
+          <p className="sm" style={{ marginTop: 12 }}>Sent. Open the email on this phone and tap <b>Sign in</b>. It can take a minute, and check spam.</p>
+          <p className="sm mut" style={{ marginTop: 8 }}>If your email shows a code instead, type it here.</p>
           <label className="f" htmlFor="otp" style={{ marginTop: 10 }}>Code from the email</label>
           <input id="otp" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={14} value={code} onChange={(e) => setCode(cleanCode(e.target.value))} placeholder="123456" />
           <div className="row" style={{ marginTop: 12 }}>
             <button className="btn acc" disabled={!codeReady(code) || busy} onClick={() => void verify()}>Sign in</button>
-            <button className="btn ghost" disabled={cooling || busy} onClick={() => void sendCode()}>{cooling ? 'Code sent' : 'Send a new code'}</button>
+            <button className="btn ghost" disabled={cooling || busy} onClick={() => void sendCode()}>{cooling ? 'Sent' : 'Send again'}</button>
           </div>
           <button className="linkbtn" onClick={() => { setSent(false); setCode('') }}>Use a different email</button>
         </>

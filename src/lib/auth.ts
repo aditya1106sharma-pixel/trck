@@ -57,3 +57,15 @@ export function friendlyCodeError(msg: string): string {
   if (/expired|invalid|incorrect|not found/i.test(msg)) return 'That code is wrong or has expired. Ask for a new one.'
   return friendlyAuthError(msg)
 }
+
+/**
+ * The proof in an emailed sign in link. Supabase puts it after the #. Only a link with both tokens counts.
+ * A reset link is a different kind ('recovery') and is handled on its own.
+ */
+export function signInTokens(hash: string): { access_token: string; refresh_token: string } | null {
+  const p = new URLSearchParams(hash.replace(/^#/, ''))
+  const access_token = p.get('access_token')
+  const refresh_token = p.get('refresh_token')
+  const type = p.get('type')
+  return access_token && refresh_token && (type === 'magiclink' || type === 'email' || type === 'signup') ? { access_token, refresh_token } : null
+}

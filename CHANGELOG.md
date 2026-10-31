@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 - 2026-10-31
+- Sign in now works with the link in the email. Type your email, tap Email me a sign in link, open the email on your phone and tap Sign in. The code box is still there for when your email shows a code.
+- This fixes 0.6.1, where the email had a link but no code and Supabase would not let the wording be changed.
+- Needs the address setting in docs/email-code-setup.md (Supabase, URL Configuration).
+
 ## 0.6.1 - 2026-10-31
 - Sign in with an emailed code, no password. Type your email, tap Email me a code, type the code from the email. The password way is still there under Use a password instead.
 - A one time setting in Supabase is needed so the email shows the code: see docs/email-code-setup.md.

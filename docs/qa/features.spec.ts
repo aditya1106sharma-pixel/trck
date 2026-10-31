@@ -155,7 +155,7 @@ test('signing in with an emailed code, no password, and the log arrives from the
   await tabs(page).getByRole('button', { name: 'Plan' }).click()
   await expect(page.getByLabel('Password')).toHaveCount(0) // the code is the way in, no password field first
   await page.getByLabel('Email', { exact: true }).fill('e2e@example.com')
-  await page.getByRole('button', { name: 'Email me a code' }).click()
+  await page.getByRole('button', { name: 'Email me a sign in link' }).click()
   await expect(page.getByLabel('Code from the email')).toBeVisible()
   expect(asked).toEqual(['e2e@example.com'])
 
@@ -169,4 +169,25 @@ test('signing in with an emailed code, no password, and the log arrives from the
   await tabs(page).getByRole('button', { name: 'Today' }).click()
   await page.getByRole('button', { name: 'Previous day' }).click()
   await expect(page.getByRole('button', { name: 'Less Egg' })).toBeVisible() // yesterday's log came down from the cloud
+})
+
+test('tapping the emailed sign in link signs you in, wipes the address, and brings the log down', async ({ page }) => {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const jwt = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: USER, aud: 'authenticated', role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`
+  const yest = new Date(Date.now() - 5 * 36e5)
+  yest.setDate(yest.getDate() - 1)
+  const cloud = { days: { [key(yest)]: { f: [{ id: 'a', n: 'Egg', p: 6.3, k: 70, q: 3 }], w: 5, u: 5 } }, settings: { ready: true, start: '2026-10-30' }, version: 1, su: 5 }
+  await page.route('**/auth/v1/user**', (r) => r.fulfill({ json: { id: USER, aud: 'authenticated', role: 'authenticated', email: 'e2e@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-10-01T00:00:00Z' } }))
+  await page.route('**/rest/v1/trck_state**', (r) => (r.request().method() === 'GET'
+    ? r.fulfill({ json: [{ data: cloud, updated_at: '2026-10-31T10:00:00.000Z' }] }) : r.fulfill({ status: 200, json: [{ user_id: USER }] })))
+  await page.addInitScript(() => { if (!localStorage.getItem('trck:v1')) localStorage.setItem('trck:v1', JSON.stringify({ version: 1, days: {}, settings: { ready: true, start: '2026-10-30' }, su: 1 })) })
+
+  await page.goto(`/#access_token=${jwt}&refresh_token=e2e-refresh&expires_in=3600&token_type=bearer&type=magiclink`)
+  await expect(tabs(page)).toBeVisible()
+  expect(page.url()).not.toContain('access_token') // the proof never stays in the address or history
+  await tabs(page).getByRole('button', { name: 'Plan' }).click()
+  await expect(page.getByText(/Signed in as e2e@example.com/)).toBeVisible()
+  await tabs(page).getByRole('button', { name: 'Today' }).click()
+  await page.getByRole('button', { name: 'Previous day' }).click()
+  await expect(page.getByRole('button', { name: 'Less Egg' })).toBeVisible()
 })

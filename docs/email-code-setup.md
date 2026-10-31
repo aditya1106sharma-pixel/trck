@@ -1,20 +1,19 @@
-# Email code sign in: one setting in Supabase
+# Passwordless sign in: what to set in Supabase
 
-TRCK 0.6.1 signs you in with a code emailed to you, with no password. Supabase's default email only contains a link, not the code. Change that once.
+TRCK signs you in with an emailed link, with no password. Type your email on the Sign in screen, tap Email me a sign in link, open the email on the same phone, tap **Sign in**, and you are in.
 
-1. Supabase, your project, **Authentication**, then **Emails** (in some versions **Email Templates**).
-2. Open the **Magic link** template. This is the email an existing account gets.
-3. Replace its body with:
+## One setting is needed: where the link may return to
+1. Supabase, your project, **Authentication**, then **URL Configuration**.
+2. **Site URL:** `https://aditya1106sharma-pixel.github.io/trck/`
+3. **Redirect URLs:** add `https://aditya1106sharma-pixel.github.io/trck/`
+4. Save. Without this the link opens the wrong address.
 
-   ```
-   <h2>Your TRCK code</h2>
-   <p>Type this code in the app: <strong>{{ .Token }}</strong></p>
-   <p>It works once and expires soon. If you did not ask for it, ignore this email.</p>
-   ```
-4. Save.
-5. Do the same for the **Confirm signup** template. This is the email a brand new account gets the first time.
+## Tips
+- Open the email in the same browser you use for TRCK. On an iPhone, a TRCK icon added to the home screen keeps its own storage, so sign in inside that icon and use the code box if your email has a code.
+- Supabase's built in email sender allows only about 2 emails an hour and only delivers to your project team. That is fine for you. Do not tap Send again more than once or twice.
+- The link works once and expires soon.
 
-Notes
-- Supabase's built in email sender only delivers to people on your Supabase project team, and it allows only a few emails an hour. That is fine for you alone. For friends, set up a free email service as described in `docs/password-reset-setup.md`.
-- The code is 6 digits by default. The app accepts 6 to 10.
-- Your old password still works under "Use a password instead".
+## Optional: a code instead of a link
+The built in sender cannot change the email wording (Supabase says so on the template page: "Set up custom SMTP to edit templates"). If you later connect a free email service (see `docs/password-reset-setup.md`, step 3), you can edit the **Magic link or OTP** template to include `{{ .Token }}`, and the code box on the Sign in screen will work. Until then, use the link.
+
+Your old password still works under "Use a password instead".
