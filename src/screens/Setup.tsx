@@ -41,7 +41,12 @@ export function Setup({ store, sync, today, toast }: Pick<ScreenProps, 'store' |
         </div>
       </Section>
 
-      {syncAvailable && (
+      {sync.email && (
+        <Section title="Signed in">
+          <p className="sm">Signed in as {sync.email}. This account has no saved log yet, so answer the three questions above to start. To bring in an older log from a backup file, tap Start, then Plan, Your data, Import.</p>
+        </Section>
+      )}
+      {syncAvailable && !sync.email && (
         <Section title="Already use TRCK?">
           {account ? <SignIn onSubmit={sync.signIn} onReset={sync.resetPassword} onSendCode={sync.sendCode} onVerifyCode={sync.verifyCode} toast={toast} /> : (
             <div className="setup">

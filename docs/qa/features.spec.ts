@@ -191,3 +191,25 @@ test('tapping the emailed sign in link signs you in, wipes the address, and brin
   await page.getByRole('button', { name: 'Previous day' }).click()
   await expect(page.getByRole('button', { name: 'Less Egg' })).toBeVisible()
 })
+
+test('after sign in with an empty account the screen holds still and sync does not repeat forever', async ({ page }) => {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const jwt = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: USER, aud: 'authenticated', role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`
+  let reads = 0
+  await page.route('**/auth/v1/user**', (r) => r.fulfill({ json: { id: USER, aud: 'authenticated', role: 'authenticated', email: 'e2e@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-10-01T00:00:00Z' } }))
+  await page.route('**/rest/v1/trck_state**', (r) => {
+    if (r.request().method() === 'GET') { reads++; return r.fulfill({ json: [] }) } // an account with nothing saved yet
+    return r.fulfill({ status: 201, body: '' })
+  })
+  await page.goto(`/#access_token=${jwt}&refresh_token=e2e-refresh&expires_in=3600&token_type=bearer&type=magiclink`)
+  await expect(page.getByRole('heading', { name: 'Set up' })).toBeVisible()
+  // Watch the screen for a few seconds. It must not flip between Set up and Today.
+  const seen = new Set<string>()
+  for (let i = 0; i < 18; i++) {
+    seen.add((await page.getByRole('heading', { name: 'Set up' }).count()) ? 'setup' : 'other')
+    await page.waitForTimeout(250)
+  }
+  expect([...seen]).toEqual(['setup'])
+  expect(reads).toBeLessThanOrEqual(3) // one sync, maybe one more after the first save, never one every 1.5 seconds
+  await expect(page.getByText(/Signed in as e2e@example.com/)).toBeVisible() // the Set up screen says who is signed in
+})

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3 - 2026-10-31
+- Fixes the screen flickering after you sign in. TRCK was syncing again and again, about every 1.5 seconds, and on an account with nothing saved yet that made it flip between the Set up and Today screens. It now syncs once, then only when you change something or come back to the app.
+- The Set up screen now says who you are signed in as, and that this account has no saved log yet, instead of asking you to sign in again.
+
 ## 0.6.2 - 2026-10-31
 - Sign in now works with the link in the email. Type your email, tap Email me a sign in link, open the email on your phone and tap Sign in. The code box is still there for when your email shows a code.
 - This fixes 0.6.1, where the email had a link but no code and Supabase would not let the wording be changed.
