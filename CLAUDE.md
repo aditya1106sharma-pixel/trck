@@ -3,7 +3,7 @@
 Aditya's personal recomposition tracker. Single user, free to run, local first. Goal: 60 days, 140 g protein, 3 to 4 full body sessions a week, fewer cigarettes and cups of tea or coffee. It must be a joy to open at 11 pm in a gym.
 
 ## Stack
-Vite + React 18 + TypeScript (strict) + Vitest. No backend. Data lives in localStorage under `trck:v1`, with JSON export and import. PWA with a cache first service worker. Hosting is free static (GitHub Pages, Cloudflare Pages or Vercel).
+Vite + React 18 + TypeScript (strict) + Vitest. No backend of our own, except optional Supabase sync and one Edge Function, `meal-photo`, that reads meal photos with Gemini (key only as a function secret, see `docs/photo-setup.md`). Data lives in localStorage under `trck:v1`, with JSON export and import. PWA with a cache first service worker. Hosting is free static (GitHub Pages, Cloudflare Pages or Vercel).
 
 ## Commands
 - `npm run dev` runs the app
@@ -11,7 +11,9 @@ Vite + React 18 + TypeScript (strict) + Vitest. No backend. Data lives in localS
 - Run all of `npm test && npm run build` before saying anything is done
 
 ## Layout
-- `src/lib/` pure logic with no React: score, muscles, fuel, stats, prompt, store, catalog, dates. All rules live here and every rule has a test in `lib.test.ts`
+- `src/lib/` pure logic with no React: score, muscles, plan, photo, fuel, stats, prompt, store, catalog, dates. All rules live here and every rule has a test in `src/lib/*.test.ts`
+- `docs/qa/*.spec.ts` Playwright smoke tests. `npm run test:e2e` builds a copy with a fake Supabase and mocks it
+- `docs/product/` research and PRDs. `supabase/` SQL and the Edge Function
 - `src/screens/` one file per tab. `src/ui/` shared pieces. `src/styles.css` is the whole design system
 - `docs/design-brief.md` is the design source of truth. `docs/roadmap.md` is what comes next
 
@@ -28,4 +30,4 @@ Vite + React 18 + TypeScript (strict) + Vitest. No backend. Data lives in localS
 Plain sentences, no jargon in the UI, no em dashes. Numbers use the display font. Touch targets 44 px. Works at 360 px wide, light and dark.
 
 ## Working with the agents
-Use the commands in `.claude/commands`: `/feature` for new work, `/design-pass` for UI, `/review` before every commit, `/ship` to release, `/weekly` to review a week of logs. Agents in `.claude/agents` are product-lead, designer, engineer, reviewer, qa and nutrition-check.
+Use the commands in `.claude/commands`: `/research` then `/prd` for a new idea, `/feature` to build it, `/design-check` to audit screens with Hallmark, `/design-pass` for UI, `/review` before every commit, `/ship` to release, `/weekly` to review a week of logs. Agents in `.claude/agents` are product-lead, designer, engineer, reviewer, qa and nutrition-check. gstack is installed at user level with prefixed names (`/gstack-review` and so on) so it never replaces ours. `docs/agent-org-guide.md` explains how the pieces fit.

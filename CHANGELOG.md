@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - 2026-10-31
+- Train now opens with Today's session: the lifts for tonight, picked from what is Ready, what is short this week and the lifts you do most. Each lift says why it is there and what to aim for. Swap changes a lift when a machine is busy. Start this session puts those lifts at the top of Train.
+- It also tells you whether your recent sessions look like full body or an upper and lower split.
+- Equipment at my gym, under Lifts: turn off machines your centre does not have, and the plan will not suggest them.
+- Add meal photo, on Today: take or choose a photo, add a few words, and TRCK lists the items with portions and macros, and a range, not one false exact number. It always asks how much oil, ghee or butter went in, because that is what photos miss. Nothing is logged until you tap Log meal. Your own food values are used where they match. You can save it as a favourite.
+- The photo is sent to Google Gemini to be read and is not kept anywhere. On the free plan Google may use it to improve its models; the app says so before you send.
+- Offline, signed out or over 20 photos a day? Copy a prompt for Claude, then paste Claude's reply back into the same screen.
+- Photo reading needs a one time setup in Supabase before it works: docs/photo-setup.md. Until then the Claude route works.
+
 ## 0.5.0 - 2026-10-31
 - Forgot your password? On the sign in screen, tap Forgot password, type your email, and a link is sent. The link opens a screen to choose a new password, and you end up signed in.
 - An old or already used link says so in plain words instead of failing quietly.

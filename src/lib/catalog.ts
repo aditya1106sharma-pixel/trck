@@ -184,4 +184,28 @@ export const SUGGEST: Partial<Record<MuscleId, string>> = {
 
 export const catalogItem = (id: string) => CATALOG.find((c) => c.id === id)
 
+// Equipment a lift needs. Custom lifts (ids starting x_) have no entry and are always available.
+export const EQUIPMENT: { id: string; n: string }[] = [
+  { id: 'legpress', n: 'Leg press machine' },
+  { id: 'chestpress', n: 'Chest press machine' },
+  { id: 'pulldown', n: 'Lat pulldown' },
+  { id: 'cable', n: 'Cable station' },
+  { id: 'db', n: 'Dumbbells' },
+  { id: 'bench', n: 'Bench' },
+  { id: 'barbell', n: 'Barbell' },
+  { id: 'legcurl', n: 'Leg curl machine' },
+  { id: 'legext', n: 'Leg extension machine' },
+  { id: 'calf', n: 'Calf raise machine or step' },
+  { id: 'assist', n: 'Assisted pull-up machine' },
+]
+
+export const LIFT_EQ: Record<string, string[]> = {
+  legpress: ['legpress'], chest: ['chestpress'], pulldown: ['pulldown'], row: ['cable'], ohp: ['db'],
+  rdl: ['db'], curl: ['db'], pushdown: ['cable'], crunch: ['cable'],
+  c_hammer: ['db'], c_incline_curl: ['db', 'bench'], c_overhead: ['cable'], c_skull: ['db', 'bench'],
+  c_lateral: ['db'], c_facepull: ['cable'], c_calf: ['calf'], c_hipthrust: ['bench', 'barbell'],
+  c_legcurl: ['legcurl'], c_legext: ['legext'], c_incline: ['db', 'bench'], c_pullup: ['assist'],
+  c_dbrow: ['db', 'bench'], c_goblet: ['db'], c_wrist: ['db'],
+}
+
 export const STREAK_MIN = 60
