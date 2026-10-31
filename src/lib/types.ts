@@ -28,6 +28,8 @@ export type FoodEntry = {
   m?: boolean | number // built meal
   c?: boolean | number // tea or coffee
   parts?: Part[]
+  src?: 'photo' // logged from a meal photo (0.6.0)
+  conf?: number // the photo reader's confidence for the meal, 0 to 1 (0.6.0)
 }
 
 export type SetLog = { w: number | null; r: number | null }
@@ -45,6 +47,7 @@ export type Day = {
   done: boolean
   note: string
   u: number // last edited, ms
+  plan?: string[] // lift ids from Start this session, in order (0.6.0)
 }
 
 export type Food = {
@@ -87,6 +90,7 @@ export type Settings = {
   foods: Food[]
   meals: Meal[]
   ready?: boolean // the first run screen is done
+  noEq?: string[] // equipment ids the gym does not have; empty means all on (0.6.0)
 }
 
 /** Bump when a stored field changes shape, and add the step to MIGRATIONS in store.ts. */

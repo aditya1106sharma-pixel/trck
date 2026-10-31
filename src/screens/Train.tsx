@@ -1,11 +1,20 @@
-import { useState } from 'react'
-import { CATALOG, MUSCLES, muscleLabel } from '../lib/catalog'
-import { addDays } from '../lib/dates'
-import { dayBest, e1rm, overloadHint, prevSession, priorBest, routine, validSets } from '../lib/muscles'
+import { useEffect, useMemo, useState } from 'react'
+import { CATALOG, EQUIPMENT, MUSCLES, muscleLabel } from '../lib/catalog'
+import { dayBest, e1rm, knownExercise, overloadHint, prevSession, priorBest, routine, validSets } from '../lib/muscles'
+import { planSession, swapLift, toAdd, trainedToday, type SessionPlan } from '../lib/plan'
 import { sessionsInWeek } from '../lib/score'
-import { blankDay, type Exercise, type MuscleId } from '../lib/types'
+import { blankDay, type Exercise, type MuscleId, type Settings } from '../lib/types'
 import { Section, r1 } from '../ui/bits'
 import { uid, type ScreenProps } from './common'
+
+/** Add a catalog lift to the routine, or bring it back if it was removed. */
+function addCatalog(x: Settings, id: string) {
+  const c = CATALOG.find((e) => e.id === id)
+  if (!c) return
+  const prev = x.extra.find((e) => e.id === id)
+  if (prev) prev.off = false
+  else x.extra.push({ ...c, x: true })
+}
 
 const imgSearch = (n: string) => `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(n + ' exercise form')}`
 
@@ -16,8 +25,11 @@ export function Train({ store, sel, today }: ScreenProps) {
   const rt = routine(s)
   const wk = sessionsInWeek(data.days, sel)
   const [adding, setAdding] = useState(false)
-  const last7 = Array.from({ length: 7 }, (_, i) => addDays(today, -i))
-  void last7
+  const [showAll, setShowAll] = useState(false)
+  const planned = (d.plan ?? []).map((id) => knownExercise(s, id)).filter((e): e is Exercise => !!e)
+  const plannedIds = new Set(planned.map((e) => e.id))
+  const rest = rt.filter((e) => !plannedIds.has(e.id))
+  const noEq = new Set(s.noEq ?? [])
 
   const setVal = (id: string, i: number, key: 'w' | 'r', v: string) =>
     mutate(sel, (x) => {
@@ -29,6 +41,31 @@ export function Train({ store, sel, today }: ScreenProps) {
 
   return (
     <>
+      {sel === today && !planned.length && trainedToday(data.days, s, today) && (
+        <section className="session"><header><h2>Today's session</h2></header>
+          <p className="session-empty">You have trained today already. Check Muscles to see what is Ready.</p></section>
+      )}
+      {sel === today && !planned.length && !trainedToday(data.days, s, today) && (
+        <TodaySession store={store} today={today} onStart={(ids) => {
+          const add = toAdd(ids, s)
+          if (add.length) setSettings((x) => { for (const id of add) addCatalog(x, id) })
+          mutate(sel, (x) => { x.plan = ids })
+          setShowAll(false)
+        }} />
+      )}
+
+      {planned.length > 0 && (
+        <section>
+          <div className="row sp plan-bar">
+            <h2>Today's session: {planned.length} lift{planned.length === 1 ? '' : 's'}</h2>
+            <div className="row">
+              <button className="btn ghost sm" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>Show all lifts</button>
+              <button className="btn ghost sm" onClick={() => mutate(sel, (x) => { delete x.plan })}>Clear session</button>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section>
         <header>
           <h2>This week</h2>
@@ -42,21 +79,13 @@ export function Train({ store, sel, today }: ScreenProps) {
         </div>
       </section>
 
-      {rt.map((ex) => <Lift key={ex.id} ex={ex} sel={sel} store={store} setVal={setVal} addSet={addSet} />)}
+      {(planned.length ? planned.concat(rest.filter((e) => showAll || (d.lift[e.id] ?? []).length > 0)) : rt).map((ex) => <Lift key={ex.id} ex={ex} sel={sel} store={store} setVal={setVal} addSet={addSet} />)}
 
       <Section title="Lifts" right={<button className="btn ghost sm" onClick={() => setAdding(!adding)}>{adding ? 'Close' : 'Add or change'}</button>}>
         {adding && (
           <AddLift
             have={new Set(rt.map((e) => e.id))}
-            onCatalog={(id) => {
-              const c = CATALOG.find((x) => x.id === id)
-              if (!c) return
-              setSettings((x) => {
-                const prev = x.extra.find((e) => e.id === id)
-                if (prev) prev.off = false
-                else x.extra.push({ ...c, x: true })
-              })
-            }}
+            onCatalog={(id) => setSettings((x) => addCatalog(x, id))}
             onCustom={(ex) => setSettings((x) => { x.extra.push(ex) })}
           />
         )}
@@ -71,8 +100,81 @@ export function Train({ store, sel, today }: ScreenProps) {
           </div>
         )}
         <p className="sm mut" style={{ marginTop: 12 }}>See a machine you do not know? Add it by name here, then use the photo or ask Claude how to use it.</p>
+        <details className="eq">
+          <summary>Equipment at my gym</summary>
+          <p className="sm mut">For Cult SG Palya and Jayanagar. Turn off anything your centre does not have.</p>
+          <div className="list">
+            {EQUIPMENT.map((q) => (
+              <label className="item eq-row" key={q.id}>
+                <input type="checkbox" checked={!noEq.has(q.id)} onChange={(e) => {
+                  const on = e.target.checked
+                  setSettings((x) => {
+                    const off = new Set(x.noEq ?? [])
+                    if (on) off.delete(q.id)
+                    else off.add(q.id)
+                    x.noEq = [...off]
+                  })
+                }} />
+                <span className="t">{q.n}</span>
+              </label>
+            ))}
+          </div>
+        </details>
       </Section>
     </>
+  )
+}
+
+/** "Chest and back: recovering, ready in 27 h. Calves: no time today." */
+function skipLine(sk: SessionPlan['skipped']): string {
+  const by = new Map<string, string[]>()
+  for (const x of sk) by.set(x.why, [...(by.get(x.why) ?? []), muscleLabel(x.mu).toLowerCase()])
+  return [...by].map(([why, ms]) => {
+    const list = ms.length < 2 ? ms[0] : ms.slice(0, -1).join(', ') + ' and ' + ms[ms.length - 1]
+    return `${list.charAt(0).toUpperCase() + list.slice(1)}: ${why.charAt(0).toLowerCase() + why.slice(1)}.`
+  }).join(' ')
+}
+
+function TodaySession({ store, today, onStart }: { store: ScreenProps['store']; today: string; onStart: (ids: string[]) => void }) {
+  const { data } = store
+  const s = data.settings
+  // The hour is in the key so "ready in N h" does not go stale on a screen left open.
+  const hour = Math.floor(Date.now() / 36e5)
+  const base = useMemo(() => planSession(data.days, s, today, Date.now()), [data.days, s, today, hour])
+  const [plan, setPlan] = useState<SessionPlan>(base)
+  // A sync or an edit rebuilds `base`. Only start over when the suggested lifts really changed, so a Swap is kept.
+  const baseKey = base.lifts.map((l) => l.id).join(',')
+  useEffect(() => setPlan(base), [baseKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const skipped = plan.skipped.filter((x) => x.why !== 'Done for this week')
+  return (
+    <section className="session">
+      <header><h2>Today's session</h2></header>
+      <p className="sm mut">{plan.style.text}</p>
+      {plan.lifts.length === 0 ? (
+        <p className="session-empty">Everything you train is recovering. Rest, walk, or do cardio today.</p>
+      ) : (
+        <>
+          <div className="list session-list">
+            {plan.lifts.map((l, i) => (
+              <div className="item" key={i}>
+                <div className="t">
+                  <b className="session-name">{l.ex.n}</b>
+                  <span className="session-target">{l.target}</span>
+                  <small>{l.reason}</small>
+                </div>
+                <button className="session-swap" aria-label={`Swap ${l.ex.n}`} disabled={!l.alts.length}
+                  aria-describedby={l.alts.length ? undefined : `noswap-${i}`}
+                  onClick={() => setPlan(swapLift(plan, i, data.days, s, today))}>Swap</button>
+                {!l.alts.length && <span id={`noswap-${i}`} hidden>No other lift for this muscle today</span>}
+              </div>
+            ))}
+          </div>
+          <p className="session-total"><span className="num">{plan.sets}</span> sets, about <span className="num">{plan.minutes}</span> min</p>
+          {skipped.length > 0 && <p className="sm mut session-skip">{skipLine(skipped)}</p>}
+          <button className="btn acc session-start" onClick={() => onStart(plan.lifts.map((l) => l.id))}>Start this session</button>
+        </>
+      )}
+    </section>
   )
 }
 

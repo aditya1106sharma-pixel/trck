@@ -11,6 +11,10 @@ Today, Train, Muscles, Fuel, Progress, Plan. Local only, backup and restore, ins
 5. AI review inside the app with the user's own key stored on the device (optional, off by default).
 6. Friends: share a read only weekly summary link. Only if friends actually ask.
 
+## Shipped in 0.6.0
+- Next session suggestion (Train) and photo meal logging (Today). PRDs in `docs/product/prds/`, research and the riskiest assumptions in `docs/product/research/`. Photo reading needs `docs/photo-setup.md` done once.
+- Check after 2 weeks: the key results in each PRD. Kill rule in `docs/agent-org-guide.md`, Lesson 5.
+
 ## Before friends sign up: what breaks with many users
 Reviewed from `supabase/schema.sql` and `src/lib/sync.ts`, ordered by risk. Nothing here is fixed yet unless it says so. Supabase limits change, so check their current free tier page before relying on a number.
 
@@ -43,4 +47,4 @@ Reviewed from `supabase/schema.sql` and `src/lib/sync.ts`, ordered by risk. Noth
 - First run screen: protein target from body weight, a start date, no one else's data. A new account on a clean device starts with no logged days (on a device that still holds someone else's log, see High item 1). Anyone with days, changed settings, or a finished setup never sees it. A signed-in person waits for their cloud log to load first. A new phone that only has a backup file restores it from Plan after tapping Start.
 
 ## Not doing
-Calorie database search, barcode scanning, social feed, notifications that nag.
+Calorie database search, barcode scanning, social feed, notifications that nag. Storing meal photos.

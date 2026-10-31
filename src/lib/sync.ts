@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { friendlyAuthError, recoveryKind, recoveryTokens, resetRedirect } from './auth'
 import { nextStamp, pushMerge, type Remote } from './cas'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
+import { failureOf, type Failure } from './photo'
 import { createSyncQueue } from './queue'
 import { needsSetup } from './setup'
 import { blankData, saveBackup, type Store } from './store'
@@ -20,6 +21,32 @@ const client: SupabaseClient | null = syncAvailable ? createClient(URL!, KEY!, {
 const RESET_PROOF: Promise<boolean> | null = client && RESET_TOKENS
   ? client.auth.setSession(RESET_TOKENS).then((r) => !r.error && !!r.data.session, () => false)
   : null
+
+const offline = () => navigator.onLine === false
+export type PhotoResult = { ok: true; text: string } | { ok: false; why: Failure }
+
+/** Sends a resized meal photo to the meal-photo Edge Function. The photo is not kept anywhere. */
+export async function readMealPhoto(image: string, note: string): Promise<PhotoResult> {
+  if (!client || !URL || !KEY) return { ok: false, why: 'not-set-up' }
+  if (offline()) return { ok: false, why: 'offline' }
+  const token = (await client.auth.getSession()).data.session?.access_token
+  if (!token) return { ok: false, why: 'signed-out' }
+  try {
+    const r = await fetch(`${URL}/functions/v1/meal-photo`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image, note }),
+      signal: AbortSignal.timeout(40_000),
+    })
+    const text = await r.text()
+    if (r.ok) return { ok: true, text }
+    let body: unknown = null
+    try { body = JSON.parse(text) } catch { /* not JSON */ }
+    return { ok: false, why: failureOf(r.status, body) }
+  } catch {
+    return { ok: false, why: offline() ? 'offline' : 'failed' }
+  }
+}
 
 export type SyncState = 'off' | 'signed-out' | 'syncing' | 'ok' | 'error'
 

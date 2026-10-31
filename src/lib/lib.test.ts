@@ -10,7 +10,7 @@ import { addBackup, blankData, loadFrom, MAX_BACKUPS, migrate, parseImport, read
 import { level, score, streaks } from './score'
 import { applySetup, needsSetup, proteinFor, showSetup, validWeight } from './setup'
 import { blankDay, DEFAULT_SETTINGS, type Day } from './types'
-import { ROUTINE } from './catalog'
+import { CATALOG, ROUTINE } from './catalog'
 
 const S = DEFAULT_SETTINGS
 const day = (o: Partial<Day>): Day => ({ ...blankDay(), ...o })
@@ -492,5 +492,128 @@ describe('sync merge', () => {
     const m = mergeData(a, b)
     expect(JSON.stringify(mergeData(m, b))).toBe(JSON.stringify(m))
     expect(m.settings.protein).toBe(150)
+  })
+})
+
+import { liftTarget, MAX_MIN, MIN_PER_SET, planSession, swapLift, trainedToday, trainingStyle } from './plan'
+import { atHour } from './dates'
+describe('next session', () => {
+  const T = '2026-10-31'
+  const NOW = atHour(T, 20)
+  const st = (n: number, w = 40, r = 10) => Array.from({ length: n }, () => ({ w, r }))
+  const S23 = { ...DEFAULT_SETTINGS, hour: 23 }
+  const upperYesterday = () => ({
+    [addDays(T, -1)]: day({ lift: { chest: st(3), pulldown: st(3), row: st(3), ohp: st(3), curl: st(2), pushdown: st(2) } }),
+  })
+  const ids = (p: ReturnType<typeof planSession>) => p.lifts.map((l) => l.id)
+  const UPPER_MAIN = ['chest', 'back', 'shoulders', 'biceps', 'triceps']
+
+  it('plans legs and core the day after an upper body session (required example)', () => {
+    const p = planSession(upperYesterday(), S23, T, NOW)
+    expect(ids(p)).toEqual(expect.arrayContaining(['legpress', 'rdl', 'c_calf', 'crunch']))
+    expect(p.lifts.find((l) => l.id === 'legpress')?.muscles).toEqual(['quads'])
+    expect(p.lifts.find((l) => l.id === 'rdl')?.muscles).toEqual(['hamstrings', 'glutes'])
+    expect(p.lifts.find((l) => l.id === 'c_calf')?.variation).toBe(true)
+    for (const l of p.lifts) for (const [m, w] of Object.entries(l.ex.m)) if (w === 1) expect(UPPER_MAIN).not.toContain(m)
+    expect(p.sets * MIN_PER_SET).toBeLessThanOrEqual(MAX_MIN)
+    expect(p.minutes).toBe(p.sets * 3)
+    expect(p.lifts[0].reason).toBe('Quads: ready, 0 of 8 sets this week')
+    expect(p.lifts.find((l) => l.id === 'rdl')?.reason).toBe('Hamstrings and glutes: ready, 0 of 6 and 0 of 6 sets this week')
+    expect(p.lifts.find((l) => l.id === 'c_calf')?.reason).toBe('Calves: ready, 0 of 6 sets this week. No calf lift in your routine yet.')
+    expect(p.lifts.find((l) => l.id === 'c_legext')?.reason).toBe('Quads: still 5 short of 8 this week')
+    expect(p.skipped).toContainEqual({ mu: 'chest', why: 'Recovering, ready in 27 h' })
+  })
+  it('gives a full body routine plan within the time cap with no history', () => {
+    const p = planSession({}, S, T, NOW)
+    const rt = new Set(ROUTINE.map((e) => e.id))
+    expect(p.lifts.length).toBeGreaterThan(3)
+    expect(p.lifts.every((l) => rt.has(l.id))).toBe(true)
+    const m = p.lifts.flatMap((l) => l.muscles)
+    expect(m).toEqual(expect.arrayContaining(['chest', 'back', 'quads', 'hamstrings']))
+    expect(p.sets * MIN_PER_SET).toBeLessThanOrEqual(MAX_MIN)
+    expect(p.style.kind).toBe('new')
+    expect(p.skipped.every((x) => x.why === 'No time today')).toBe(true)
+  })
+  it('picks another quads lift when the leg press machine is off', () => {
+    const p = planSession(upperYesterday(), { ...S23, noEq: ['legpress'] }, T, NOW)
+    expect(ids(p)).not.toContain('legpress')
+    const q = p.lifts.find((l) => l.muscles.includes('quads'))
+    expect(['c_legext', 'c_goblet']).toContain(q?.id)
+    expect(q?.variation).toBe(true)
+  })
+  it('ranks the lift with more history first', () => {
+    const s = { ...S23, extra: ['c_legext', 'c_goblet'].map((id) => ({ ...CATALOG.find((c) => c.id === id)!, x: true })) }
+    const days = { '2026-10-10': day({ lift: { c_goblet: st(3) } }), '2026-10-14': day({ lift: { c_goblet: st(3) } }), '2026-10-12': day({ lift: { c_legext: st(3) } }) }
+    const p = planSession(days, { ...s, noEq: ['legpress'] }, T, NOW)
+    expect(p.lifts.find((l) => l.muscles.includes('quads'))?.id).toBe('c_goblet')
+  })
+  it('does not plan a muscle above the top of its range', () => {
+    const s = { ...S23, extra: [{ ...CATALOG.find((c) => c.id === 'c_calf')!, x: true }] }
+    const p = planSession({ '2026-10-27': day({ lift: { c_calf: st(13) } }) }, s, T, NOW)
+    expect(p.lifts.some((l) => l.ex.m.calves === 1)).toBe(false)
+    expect(p.skipped).toContainEqual({ mu: 'calves', why: 'Done for this week' })
+  })
+  it('gives every lift a reason and target, and swaps never repeat a chosen lift', () => {
+    for (const p of [planSession({}, S, T, NOW), planSession(upperYesterday(), S23, T, NOW)]) {
+      const chosen = ids(p)
+      for (const l of p.lifts) {
+        expect(l.reason.length).toBeGreaterThan(0)
+        expect(l.target.length).toBeGreaterThan(0)
+        for (const a of l.alts) expect(chosen).not.toContain(a)
+      }
+    }
+  })
+  it('writes targets from the overload rule', () => {
+    const days = { '2026-10-20': day({ lift: { legpress: st(3, 100, 12) } }), '2026-10-22': day({ lift: { rdl: [{ w: 35, r: 10 }, { w: 35, r: 9 }, { w: 30, r: 12 }] } }) }
+    const ex = (id: string) => ROUTINE.find((e) => e.id === id)!
+    expect(liftTarget(ex('legpress'), days, T)).toBe('105 kg x 8')
+    expect(liftTarget(ex('rdl'), days, T)).toBe('35 kg x 11')
+    expect(liftTarget(ex('rdl'), { '2026-10-22': day({ lift: { rdl: st(3, 35, 12) } }) }, T)).toBe('37.5 kg x 8')
+    expect(liftTarget(ex('curl'), { '2026-10-22': day({ lift: { curl: [{ w: 10, r: 15 }] } }) }, T)).toBe('10 kg x 15')
+    expect(planSession({}, S, T, NOW).lifts[0].target).toBe('Find a weight for 8 reps')
+  })
+  it('cycles swap options and keeps the time total right', () => {
+    const p = planSession(upperYesterday(), { ...S23, noEq: ['legpress'] }, T, NOW)
+    const i = p.lifts.findIndex((l) => l.alts.length > 0)
+    expect(i).toBeGreaterThanOrEqual(0)
+    const was = p.lifts[i].id
+    const q = swapLift(p, i, upperYesterday(), S23, T)
+    expect(q.lifts[i].id).toBe(p.lifts[i].alts[0])
+    expect(q.lifts[i].alts).toContain(was)
+    expect(q.minutes).toBe(q.sets * MIN_PER_SET)
+  })
+  it('detects full body and upper and lower styles', () => {
+    const full: Record<string, Day> = {}
+    for (const k of ['2026-10-06', '2026-10-09', '2026-10-13', '2026-10-16', '2026-10-20', '2026-10-23', '2026-10-27', '2026-10-30'])
+      full[k] = day({ lift: { chest: st(3), legpress: st(3) } })
+    expect(trainingStyle(full, S, T)).toEqual({ kind: 'full', text: 'Your last 8 sessions look like full body, about 2 a week.' })
+    const split: Record<string, Day> = {}
+    ;['2026-10-20', '2026-10-22', '2026-10-24', '2026-10-27', '2026-10-29'].forEach((k, i) => {
+      split[k] = day({ lift: i % 2 ? { legpress: st(3), rdl: st(3) } : { chest: st(3), row: st(3) } })
+    })
+    expect(trainingStyle(split, S, T)).toEqual({ kind: 'upper-lower', text: 'Your last 5 sessions look like an upper and lower split, about 1.5 a week.' })
+  })
+  it('still uses a recovering muscle as a helper', () => {
+    const p = planSession({ [addDays(T, -1)]: day({ lift: { pulldown: st(3), row: st(3) } }) }, S23, T, NOW)
+    expect(hoursLeft({ [addDays(T, -1)]: day({ lift: { pulldown: st(3), row: st(3) } }) }, S23, 'back', NOW)).toBeGreaterThan(0)
+    expect(ids(p)).toContain('rdl')
+    expect(p.lifts.every((l) => l.ex.m.back !== 1)).toBe(true)
+  })
+  it('never puts the same lift in the plan twice, even after swapping two lifts with a shared option', () => {
+    let p = planSession(upperYesterday(), S23, T, NOW)
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < p.lifts.length; i++) p = swapLift(p, i, upperYesterday(), S23, T)
+      expect(new Set(ids(p)).size).toBe(ids(p).length)
+    }
+  })
+  it('knows when today already has sets, so the card is not offered after a session', () => {
+    const d = { ...upperYesterday(), [T]: day({ lift: { chest: [{ w: 30, r: 10 }] } }) }
+    expect(trainedToday(d, S23, T)).toBe(true)
+    expect(trainedToday(upperYesterday(), S23, T)).toBe(false)
+  })
+  it('counts a 1 am session on the previous day key for the 48 hour rule', () => {
+    const d = { '2026-10-30': day({ lift: { legpress: [{ w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 10 }] } }) }
+    const p = planSession(d, S23, T, atHour(T, 20))
+    expect(ids(p)).not.toContain('legpress') // trained on the 30th at 23:00, ready again on the 1st at 23:00
   })
 })

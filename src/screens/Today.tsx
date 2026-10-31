@@ -4,6 +4,7 @@ import { diffDays } from '../lib/dates'
 import { carbG, carbTarget, fatG, kcal, kcalOf, level, protein, score, streaks, cupsOf } from '../lib/score'
 import { blankDay, type Food, type FoodEntry, type Part } from '../lib/types'
 import { Check, Num, Rail, Section, Stepper, f0, r1 } from '../ui/bits'
+import { MealPhoto } from '../ui/MealPhoto'
 import { Plates } from '../ui/Plates'
 import { uid, type ScreenProps } from './common'
 
@@ -23,7 +24,7 @@ export function Today({ store, sel, today, toast }: ScreenProps) {
   const lv = level(data.days, s)
   const P = protein(d)
   const dayN = Math.max(1, diffDays(sel, s.start) + 1)
-  const [open, setOpen] = useState<'none' | 'custom' | 'meal'>('none')
+  const [open, setOpen] = useState<'none' | 'custom' | 'meal' | 'photo'>('none')
 
   const foods = FOODS.concat(s.foods)
   const addFood = (f: Omit<FoodEntry, 'id'>) =>
@@ -86,10 +87,16 @@ export function Today({ store, sel, today, toast }: ScreenProps) {
             ))}
           </div>
         )}
-        <div className="row">
+        <div className="row wrap">
+          <button className="btn ghost photo-open" aria-expanded={open === 'photo'} onClick={() => setOpen(open === 'photo' ? 'none' : 'photo')}>Add meal photo</button>
           <button className="btn ghost sm" onClick={() => setOpen(open === 'custom' ? 'none' : 'custom')}>Custom food</button>
           <button className="btn ghost sm" onClick={() => setOpen(open === 'meal' ? 'none' : 'meal')}>Build a meal</button>
         </div>
+        {open === 'photo' && <MealPhoto foods={s.foods} toast={toast} onClose={() => setOpen('none')} onLog={(e, fav) => {
+          mutate(sel, (x) => { x.f.push(e) })
+          if (fav) setSettings((x) => { x.meals = x.meals.filter((m) => m.n !== fav.n).concat(fav) })
+          toast(fav ? 'Logged and saved as a favourite' : 'Meal logged'); setOpen('none')
+        }} />}
         {open === 'custom' && <CustomFood onSave={(f, keep) => { addFood(entryOf(f)); if (keep) setSettings((x) => { x.foods.push(f) }); setOpen('none') }} />}
         {open === 'meal' && <MealBuilder onSave={(name, parts, add) => {
           setSettings((x) => { x.meals = x.meals.filter((m) => m.n !== name).concat({ n: name, parts }) })
@@ -106,7 +113,7 @@ export function Today({ store, sel, today, toast }: ScreenProps) {
           <div className="list">
             {d.f.map((x) => (
               <div className="item" key={x.id}>
-                <div className="t"><b>{x.n}</b><small>{f0(x.p * x.q)} g protein · {f0(x.k * x.q)} kcal{x.parts ? ` · ${x.parts.length} items` : ''}</small></div>
+                <div className="t"><b>{x.n}</b><small>{f0(x.p * x.q)} g protein · {f0(x.k * x.q)} kcal{x.parts ? ` · ${x.parts.length} items` : ''}{x.src === 'photo' ? ' · from a photo' : ''}</small></div>
                 <div className="step">
                   <button aria-label={`Less ${x.n}`} onClick={() => qty(x.id, -1)}>−</button>
                   <output>{x.q}</output>

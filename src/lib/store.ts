@@ -64,6 +64,8 @@ export function normDay(raw: Partial<Day> | undefined): Day {
   d.w = Number(d.w) || 0
   d.cig = Number(d.cig) || 0
   d.cardio = Number(d.cardio) || 0
+  if (d.plan !== undefined && !(Array.isArray(d.plan) && d.plan.every((x) => typeof x === 'string'))) delete d.plan
+  if (Array.isArray(d.f)) for (const x of d.f) if (x && x.conf !== undefined && !(typeof x.conf === 'number' && x.conf >= 0 && x.conf <= 1)) delete x.conf
   return d
 }
 
@@ -72,6 +74,7 @@ export function normSettings(raw: Partial<Settings> | undefined): Settings {
   s.extra = Array.isArray(s.extra) ? s.extra : []
   s.foods = Array.isArray(s.foods) ? s.foods : []
   s.meals = Array.isArray(s.meals) ? s.meals : []
+  if (s.noEq !== undefined && !Array.isArray(s.noEq)) delete s.noEq
   return s
 }
 
