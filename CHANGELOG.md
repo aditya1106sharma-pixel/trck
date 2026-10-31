@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 - 2026-10-31
+- Sign in with an emailed code, no password. Type your email, tap Email me a code, type the code from the email. The password way is still there under Use a password instead.
+- A one time setting in Supabase is needed so the email shows the code: see docs/email-code-setup.md.
+
 ## 0.6.0 - 2026-10-31
 - Train now opens with Today's session: the lifts for tonight, picked from what is Ready, what is short this week and the lifts you do most. Each lift says why it is there and what to aim for. Swap changes a lift when a machine is busy. Start this session puts those lifts at the top of Train.
 - It also tells you whether your recent sessions look like full body or an upper and lower split.

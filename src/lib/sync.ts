@@ -1,6 +1,6 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { friendlyAuthError, recoveryKind, recoveryTokens, resetRedirect } from './auth'
+import { cleanCode, friendlyAuthError, friendlyCodeError, recoveryKind, recoveryTokens, resetRedirect } from './auth'
 import { nextStamp, pushMerge, type Remote } from './cas'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
 import { failureOf, type Failure } from './photo'
@@ -155,6 +155,19 @@ export function useSync(store: Store) {
     return ''
   }
 
+  /** Emails a one time code. No password is involved. Returns a message only on failure. */
+  const sendCode = async (email: string): Promise<string> => {
+    if (!client) return 'Sync is not set up in this build.'
+    const { error } = await client.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
+    return error ? friendlyAuthError(error.message) : ''
+  }
+  /** Checks the code from the email. On success the session starts and the app picks it up. Returns a message only on failure. */
+  const verifyCode = async (email: string, code: string): Promise<string> => {
+    if (!client) return 'Sync is not set up in this build.'
+    const { error } = await client.auth.verifyOtp({ email, token: cleanCode(code), type: 'email' })
+    return error ? friendlyCodeError(error.message) : ''
+  }
+
   /** Asks Supabase to email a reset link. The answer is the same whether or not the address has an account. */
   const resetPassword = async (email: string): Promise<{ ok: boolean; message: string }> => {
     if (!client) return { ok: false, message: 'Sync is not set up in this build.' }
@@ -200,5 +213,5 @@ export function useSync(store: Store) {
     }
   }
 
-  return { state, error, loading, recovery, email: session?.user.email ?? null, signIn, resetPassword, setNewPassword, endRecovery, signOut, syncNow }
+  return { state, error, loading, recovery, email: session?.user.email ?? null, signIn, sendCode, verifyCode, resetPassword, setNewPassword, endRecovery, signOut, syncNow }
 }

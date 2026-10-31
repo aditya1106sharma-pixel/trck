@@ -43,7 +43,7 @@ export function Setup({ store, sync, today, toast }: Pick<ScreenProps, 'store' |
 
       {syncAvailable && (
         <Section title="Already use TRCK?">
-          {account ? <SignIn onSubmit={sync.signIn} onReset={sync.resetPassword} toast={toast} /> : (
+          {account ? <SignIn onSubmit={sync.signIn} onReset={sync.resetPassword} onSendCode={sync.sendCode} onVerifyCode={sync.verifyCode} toast={toast} /> : (
             <div className="setup">
               <p className="sm mut">Sign in to bring your log to this device.</p>
               <button className="btn ghost" onClick={() => setAccount(true)}>Sign in</button>
