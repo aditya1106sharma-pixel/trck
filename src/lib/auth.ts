@@ -43,3 +43,17 @@ export function friendlyAuthError(msg: string): string {
   if (/same password|different from the old/i.test(msg)) return 'Pick a password you have not used before.'
   return msg
 }
+
+export const CODE_MIN = 6
+export const CODE_MAX = 10 // Supabase lets a project choose 6 to 10 digits
+
+/** What was typed, kept to digits only. A pasted code with spaces or a dash still works. */
+export const cleanCode = (raw: string): string => raw.replace(/\D/g, '').slice(0, CODE_MAX)
+
+export const codeReady = (raw: string): boolean => cleanCode(raw).length >= CODE_MIN
+
+/** A wrong, old or used code. Anything else goes through the normal sign in wording. */
+export function friendlyCodeError(msg: string): string {
+  if (/expired|invalid|incorrect|not found/i.test(msg)) return 'That code is wrong or has expired. Ask for a new one.'
+  return friendlyAuthError(msg)
+}

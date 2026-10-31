@@ -132,3 +132,41 @@ test('the day after an upper body session, Train suggests legs and core, and Sta
   await page.getByRole('button', { name: 'Show all lifts' }).click()
   await expect(page.getByRole('heading', { name: 'Chest press', level: 3 })).toBeVisible()
 })
+
+test('signing in with an emailed code, no password, and the log arrives from the cloud', async ({ page }) => {
+  const asked: string[] = []
+  const yest = new Date(Date.now() - 5 * 36e5)
+  yest.setDate(yest.getDate() - 1)
+  const cloud = { days: { [key(yest)]: { f: [{ id: 'a', n: 'Egg', p: 6.3, k: 70, q: 3 }], w: 5, u: 5 } }, settings: { ready: true, start: '2026-10-30' }, version: 1, su: 5 }
+  await page.route('**/auth/v1/otp**', async (r) => { asked.push(r.request().postDataJSON().email); await r.fulfill({ json: {} }) })
+  await page.route('**/auth/v1/verify**', async (r) => {
+    const b = r.request().postDataJSON()
+    if (b.token !== '123456') return r.fulfill({ status: 403, json: { code: 403, error_code: 'otp_expired', msg: 'Token has expired or is invalid' } })
+    const now = Math.floor(Date.now() / 1000)
+    await r.fulfill({ json: { access_token: 'e2e-token', refresh_token: 'e2e-refresh', token_type: 'bearer', expires_in: 3600, expires_at: now + 3600,
+      user: { id: USER, aud: 'authenticated', role: 'authenticated', email: 'e2e@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-10-01T00:00:00Z' } } })
+  })
+  await page.route('**/auth/v1/user**', (r) => r.fulfill({ json: { id: USER, aud: 'authenticated', email: 'e2e@example.com' } }))
+  await page.route('**/rest/v1/trck_state**', (r) => (r.request().method() === 'GET'
+    ? r.fulfill({ json: [{ data: cloud, updated_at: '2026-10-31T10:00:00.000Z' }] }) : r.fulfill({ status: 200, json: [{ user_id: USER }] })))
+  await page.addInitScript(() => { if (!localStorage.getItem('trck:v1')) localStorage.setItem('trck:v1', JSON.stringify({ version: 1, days: {}, settings: { ready: true, start: '2026-10-30' }, su: 1 })) })
+
+  await page.goto('/')
+  await tabs(page).getByRole('button', { name: 'Plan' }).click()
+  await expect(page.getByLabel('Password')).toHaveCount(0) // the code is the way in, no password field first
+  await page.getByLabel('Email', { exact: true }).fill('e2e@example.com')
+  await page.getByRole('button', { name: 'Email me a code' }).click()
+  await expect(page.getByLabel('Code from the email')).toBeVisible()
+  expect(asked).toEqual(['e2e@example.com'])
+
+  await page.getByLabel('Code from the email').fill('000 000')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByText(/wrong or has expired/)).toBeVisible()
+
+  await page.getByLabel('Code from the email').fill('123 456')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByText(/Signed in as e2e@example.com/)).toBeVisible()
+  await tabs(page).getByRole('button', { name: 'Today' }).click()
+  await page.getByRole('button', { name: 'Previous day' }).click()
+  await expect(page.getByRole('button', { name: 'Less Egg' })).toBeVisible() // yesterday's log came down from the cloud
+})
