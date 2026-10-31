@@ -4,6 +4,7 @@ import { useStore } from './lib/store'
 import { showSetup } from './lib/setup'
 import { Fuel } from './screens/Fuel'
 import { Muscles } from './screens/Muscles'
+import { NewPassword } from './screens/NewPassword'
 import { Plan } from './screens/Plan'
 import { Progress } from './screens/Progress'
 import { Setup } from './screens/Setup'
@@ -37,6 +38,15 @@ export default function App() {
   }, [])
   const toast = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 2200) }
 
+  if (sync.recovery) {
+    return (
+      <>
+        <header className="top"><div className="brand">TRC<i>K</i></div></header>
+        <main><NewPassword sync={sync} toast={toast} /></main>
+        {msg && <div className="toast" role="status">{msg}</div>}
+      </>
+    )
+  }
   if (showSetup(store.data, { locked: store.locked, loading: sync.loading, email: sync.email, state: sync.state })) {
     return (
       <>

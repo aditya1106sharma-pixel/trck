@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays, todayKey, weekStart } from './dates'
 import { advise, fuelData } from './fuel'
 import { band, hoursLeft, overloadHint, prevSession, routine, weekEffective } from './muscles'
+import { friendlyAuthError, passwordProblem, recoveryKind, recoveryTokens, resetRedirect } from './auth'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
 import { nextStamp, pushMerge, stable, type Remote } from './cas'
 import { createSyncQueue } from './queue'
@@ -355,6 +356,49 @@ describe('two devices saving at once', () => {
   it('compares by content, not key order', () => {
     expect(stable({ b: 1, a: { d: [1, { y: 1, x: 2 }], c: 3 } })).toBe(stable({ a: { c: 3, d: [1, { x: 2, y: 1 }] }, b: 1 }))
     expect(stable({ a: 1 })).not.toBe(stable({ a: 2 }))
+  })
+})
+
+describe('password reset', () => {
+  it('asks for a long enough password, typed twice the same', () => {
+    expect(passwordProblem('12345', '12345')).toMatch(/at least 6/)
+    expect(passwordProblem('123456', '1234567')).toMatch(/do not match/)
+    expect(passwordProblem('123456', '123456')).toBe('')
+  })
+  it('sends the person back to this app, not to a page with old tokens in it', () => {
+    expect(resetRedirect({ origin: 'https://x.github.io', pathname: '/trck/' })).toBe('https://x.github.io/trck/')
+  })
+  it('recognises a good reset link from the address', () => {
+    expect(recoveryKind('#access_token=abc&expires_in=3600&refresh_token=r&token_type=bearer&type=recovery')).toBe('recovery')
+  })
+  it('recognises a used or old reset link', () => {
+    expect(recoveryKind('#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')).toBe('expired')
+  })
+  it('ignores every other address, including a sign up link and a plain visit', () => {
+    expect(recoveryKind('')).toBeNull()
+    expect(recoveryKind('#access_token=abc&refresh_token=r&type=signup')).toBeNull()
+    expect(recoveryKind('#type=recovery')).toBeNull() // no tokens, so nothing to use
+    expect(recoveryKind('#type=recovery&access_token=abc')).toBeNull() // both tokens are needed
+    expect(recoveryKind('', '?type=recovery&token_hash=x')).toBeNull() // the app does not use that kind of link
+    expect(recoveryKind('', '?utm=1')).toBeNull()
+  })
+  it('pulls both tokens out of a good link, and nothing out of anything else', () => {
+    expect(recoveryTokens('#access_token=a.b.c&refresh_token=r1&type=recovery')).toEqual({ access_token: 'a.b.c', refresh_token: 'r1' })
+    expect(recoveryTokens('#access_token=a.b.c&refresh_token=r1&type=signup')).toBeNull()
+    expect(recoveryTokens('#error=access_denied&error_code=otp_expired')).toBeNull()
+  })
+  it('turns Supabase wording into plain words', () => {
+    expect(friendlyAuthError('email rate limit exceeded')).toMatch(/Too many tries/)
+    expect(friendlyAuthError('For security purposes, you can only request this after 56 seconds.')).toMatch(/Too many tries/)
+    expect(friendlyAuthError('Email address not authorized')).toMatch(/Ask Aditya/)
+    expect(friendlyAuthError('Auth session missing!')).toMatch(/expired/)
+    expect(friendlyAuthError('New password should be different from the old password.')).toMatch(/not used before/)
+    expect(friendlyAuthError('something else')).toBe('something else')
+  })
+  it('leaves a wrong password, and other real sign in errors, in Supabase words', () => {
+    expect(friendlyAuthError('Invalid login credentials')).toBe('Invalid login credentials')
+    expect(friendlyAuthError('Email address "x" is invalid')).toBe('Email address "x" is invalid')
+    expect(friendlyAuthError('User already registered')).toBe('User already registered')
   })
 })
 

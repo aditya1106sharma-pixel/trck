@@ -82,7 +82,7 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
               }}>Sign out</button>
             </div>
           </>
-        ) : <SignIn onSubmit={sync.signIn} toast={toast} />}
+        ) : <SignIn onSubmit={sync.signIn} onReset={sync.resetPassword} toast={toast} />}
       </Section>
 
       <Section title="Your data">
