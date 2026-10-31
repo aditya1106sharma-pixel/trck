@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 - 2026-10-31
+- Forgot your password? On the sign in screen, tap Forgot password, type your email, and a link is sent. The link opens a screen to choose a new password, and you end up signed in.
+- An old or already used link says so in plain words instead of failing quietly.
+- Sign in problems now come back in plain words, such as "Too many tries. Wait a minute."
+- The email side needs setting up once before it works for friends. The steps are in docs/password-reset-setup.md.
+
 ## 0.4.2 - 2026-10-31
 - Phone and laptop saving at the same moment no longer lose an edit. If another device saved first, TRCK reads its changes, adds them to yours and saves again.
 - If that still cannot settle after a few tries, Plan says another device is saving. Tap Sync now a few seconds later.

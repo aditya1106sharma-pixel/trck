@@ -1,5 +1,6 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { friendlyAuthError, recoveryKind, recoveryTokens, resetRedirect } from './auth'
 import { nextStamp, pushMerge, type Remote } from './cas'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
 import { createSyncQueue } from './queue'
@@ -9,7 +10,16 @@ import { blankData, saveBackup, type Store } from './store'
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 export const syncAvailable = !!(URL && KEY)
-const client: SupabaseClient | null = syncAvailable ? createClient(URL!, KEY!) : null
+// A reset email lands here with its proof in the address. Read it now and wipe the address at once, so the tokens
+// never sit in the browser history. The Supabase client is told not to read the address itself.
+const RESET_LINK = syncAvailable ? recoveryKind(window.location.hash, window.location.search) : null
+const RESET_TOKENS = RESET_LINK === 'recovery' ? recoveryTokens(window.location.hash) : null
+if (RESET_LINK) { try { history.replaceState(null, '', window.location.pathname) } catch { /* ignore */ } }
+const client: SupabaseClient | null = syncAvailable ? createClient(URL!, KEY!, { auth: { detectSessionInUrl: false } }) : null
+// The link only counts if Supabase accepts its tokens. Started once, here, so a second render cannot spend them twice.
+const RESET_PROOF: Promise<boolean> | null = client && RESET_TOKENS
+  ? client.auth.setSession(RESET_TOKENS).then((r) => !r.error && !!r.data.session, () => false)
+  : null
 
 export type SyncState = 'off' | 'signed-out' | 'syncing' | 'ok' | 'error'
 
@@ -18,13 +28,18 @@ export function useSync(store: Store) {
   const [state, setState] = useState<SyncState>(syncAvailable ? 'signed-out' : 'off')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(syncAvailable) // true until we know whether someone is signed in
+  const [recoveryOver, setRecoveryOver] = useState(false)
+  const [proven, setProven] = useState(false) // Supabase accepted the tokens from a reset link
   const dataRef = useRef(store.data)
   dataRef.current = store.data
   const queue = useRef(createSyncQueue()).current
 
   useEffect(() => {
     if (!client) return
-    client.auth.getSession().then(({ data }) => setSession(data.session)).catch(() => {}).finally(() => setLoading(false))
+    ;(async () => {
+      if (RESET_PROOF) setProven(await RESET_PROOF)
+      setSession((await client.auth.getSession()).data.session)
+    })().catch(() => {}).finally(() => setLoading(false))
     const { data } = client.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => data.subscription.unsubscribe()
   }, [])
@@ -108,10 +123,33 @@ export function useSync(store: Store) {
   const signIn = async (email: string, password: string, create: boolean) => {
     if (!client) return 'Sync is not set up in this build.'
     const r = create ? await client.auth.signUp({ email, password }) : await client.auth.signInWithPassword({ email, password })
-    if (r.error) return r.error.message
+    if (r.error) return friendlyAuthError(r.error.message)
     if (create && !r.data.session) return 'Account created. Confirm the email Supabase sent, then sign in.'
     return ''
   }
+
+  /** Asks Supabase to email a reset link. The answer is the same whether or not the address has an account. */
+  const resetPassword = async (email: string): Promise<{ ok: boolean; message: string }> => {
+    if (!client) return { ok: false, message: 'Sync is not set up in this build.' }
+    const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: resetRedirect(window.location) })
+    if (error) return { ok: false, message: friendlyAuthError(error.message) }
+    return { ok: true, message: 'If that address has an account, a reset link is on its way. It can take a few minutes. Check spam.' }
+  }
+  const endRecovery = () => {
+    setRecoveryOver(true)
+    try { history.replaceState(null, '', window.location.pathname) } catch { /* ignore */ }
+  }
+  /** After a good reset link the person is signed in, so this just sets the new password. Returns a message only on failure. */
+  const setNewPassword = async (pw: string): Promise<string> => {
+    if (!client) return 'Sync is not set up in this build.'
+    const { error } = await client.auth.updateUser({ password: pw })
+    if (error) return friendlyAuthError(error.message)
+    endRecovery()
+    return ''
+  }
+  // 'ready' only when Supabase accepted the link's tokens. Anything else that looked like a reset link is 'expired'.
+  // Nothing is decided until we know who is signed in.
+  const recovery: 'ready' | 'expired' | null = loading || recoveryOver || !RESET_LINK ? null : RESET_LINK === 'recovery' && proven && session ? 'ready' : 'expired'
 
   /**
    * Ends the session, then clears this device so the next person starts empty.
@@ -135,5 +173,5 @@ export function useSync(store: Store) {
     }
   }
 
-  return { state, error, loading, email: session?.user.email ?? null, signIn, signOut, syncNow }
+  return { state, error, loading, recovery, email: session?.user.email ?? null, signIn, resetPassword, setNewPassword, endRecovery, signOut, syncNow }
 }
