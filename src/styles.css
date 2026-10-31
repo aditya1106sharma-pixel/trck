@@ -90,6 +90,13 @@ label.f{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
 
 .list>*{padding:12px 0;border-top:1px solid var(--line)}
 .list>*:first-child{border-top:0}
+.kept{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
+.kept h3{font-size:15px;letter-spacing:.1em;margin-bottom:6px}
+.kept .list{margin-top:4px}
+.kept-row{justify-content:space-between;gap:12px}
+.kept-why{min-width:0;font-size:15px;line-height:1.3;overflow-wrap:anywhere}
+.kept-why small{display:block;font-size:13px;margin-top:2px}
+.kept-row .btn{flex:none;min-height:44px;min-width:96px}
 .item{display:flex;align-items:center;gap:12px}
 .item .t{flex:1;min-width:0}
 .item .t b{display:block;font-weight:600}

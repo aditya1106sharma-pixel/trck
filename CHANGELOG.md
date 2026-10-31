@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 - 2026-10-31
+- Signing out now clears the log from that device, so the next person to sign in there cannot get it mixed into their account. Your account keeps your log.
+- Before it clears, the app saves everything to your account first and asks you to confirm.
+- A copy is always kept on the device. Plan, Your data now lists the copies kept, with a Download button for each.
+- If someone else's log is found on a device when a different person signs in, it is copied aside and the device starts empty.
+
 ## 0.4.0 - 2026-10-31
 - New people now get a short setup screen: body weight, a protein target worked out from it, and a start date. Nothing from anyone else's log is pre-filled.
 - If you already have a log, or sign in on a second phone, you never see it.

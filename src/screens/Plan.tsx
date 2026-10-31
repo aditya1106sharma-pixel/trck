@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { diffDays, fmt } from '../lib/dates'
-import { exportJson, parseImport } from '../lib/store'
+import { exportJson, parseImport, readBackups } from '../lib/store'
 import { reviewPrompt } from '../lib/prompt'
 import { carbTarget } from '../lib/score'
 import { DEFAULT_SETTINGS, type Settings } from '../lib/types'
@@ -73,7 +73,13 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
             {sync.error && <p className="sm bad" style={{ marginTop: 6 }}>{sync.error}</p>}
             <div className="row" style={{ marginTop: 12 }}>
               <button className="btn ghost sm" onClick={() => void sync.syncNow()}>Sync now</button>
-              <button className="btn ghost sm" onClick={() => void sync.signOut()}>Sign out</button>
+              <button className="btn ghost sm" onClick={async () => {
+                const saved = await sync.syncNow()
+                const sure = window.confirm(saved
+                  ? 'Sign out and clear this device? Your log stays in your account, and a copy is kept on this device.'
+                  : 'Your latest changes could not be saved to your account. Sign out and clear this device anyway? A copy is kept on this device.')
+                if (sure) toast(await sync.signOut() ? 'Signed out' : 'Nothing was cleared. Download a backup, then try again.')
+              }}>Sign out</button>
             </div>
           </>
         ) : <SignIn onSubmit={sync.signIn} toast={toast} />}
@@ -94,12 +100,13 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
               const imp = parseImport(await f.text())
               const n = Object.keys(imp.days).length
               if (!window.confirm(`Replace what is on this device with ${n} days from this file?`)) return
-              replace(imp, true); toast(`Imported ${n} days`)
+              toast(replace(imp, true) ? `Imported ${n} days` : 'Nothing was changed: this device is too full to keep a copy of your current log. Download a backup first.')
             } catch (err) { toast(err instanceof Error ? err.message : 'Could not read that file') }
           }} />
         </div>
         <p className="sm mut" style={{ marginTop: 10 }}>Import also reads the export from the first prototype. Before an import, the last copy on this device is kept, up to five.</p>
         {saveError && <div className="warnbar" role="alert">This device refused to save. Download a backup now.</div>}
+        <KeptCopies />
       </Section>
 
       <Section title="Look">
@@ -115,5 +122,40 @@ export function Plan({ store, today, toast, sync }: ScreenProps) {
 
       <p className="sm mut" style={{ padding: '18px 0' }}>Version <span className="num" data-testid="version">{__APP_VERSION__}</span></p>
     </>
+  )
+}
+
+const WHY: Record<string, string> = {
+  'before import': 'Before an import',
+  'before upgrade': 'Before an upgrade',
+  'before sign out': 'Before signing out',
+  'another account was here': 'Before another account signed in',
+  unreadable: 'Could not be read',
+}
+
+/** The last few copies the app set aside, so a wrong import or a sign out can be undone by hand. */
+function KeptCopies() {
+  const copies = readBackups().slice().reverse()
+  if (!copies.length) return null
+  const save = (json: string, at: number) => {
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+    a.download = `trck-kept-${new Date(at).toISOString().slice(0, 16).replace(/[T:]/g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  return (
+    <div className="kept">
+      <h3>Copies kept on this device</h3>
+      <p className="sm mut">Download one, then use Restore or import to put it back.</p>
+      <div className="list">
+        {copies.map((b) => (
+          <div key={b.at} className="row kept-row">
+            <span className="kept-why">{WHY[b.reason] ?? b.reason}<small className="mut">{new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small></span>
+            <button className="btn ghost sm" onClick={() => save(b.json, b.at)}>Download</button>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
