@@ -16,7 +16,7 @@ Reviewed from `supabase/schema.sql` and `src/lib/sync.ts`, ordered by risk. Noth
 
 ### High
 1. ~~Signing out leaves the log on the device, and the next person to sign in gets it merged into their account.~~ Fixed in 0.4.1, see Done below.
-2. **Two devices syncing at the same moment can lose an edit.** Sync reads the row, merges, then writes with no check that the row is unchanged, so the last write wins. Fix: add a `rev` number to the table, write only if `rev` still matches, and on a clash read again, merge again and retry. Add a test for the merge on retry.
+2. ~~Two devices syncing at the same moment can lose an edit.~~ Fixed in 0.4.2, see Done below.
 3. **A forgotten password cannot be recovered.** There is no reset screen, and Supabase's built-in email sender allows very few emails an hour. Because Confirm email is off, a typo in the email address at sign up also locks the person out for good. Fix: add Forgot password (`resetPasswordForEmail` and a screen for choosing a new one), set the Site URL and redirect URL in Supabase to the live address, and use a free custom email service for sending. Needs Aditya to create that account.
 4. **A free Supabase project pauses after about a week with no activity.** After that, nobody can sign in until it is restored by hand. Fix: a weekly GitHub Action that makes one harmless request to the project, and a line in the friends guide saying to keep a backup.
 
@@ -34,6 +34,8 @@ Reviewed from `supabase/schema.sql` and `src/lib/sync.ts`, ordered by risk. Noth
 
 ### Done
 - **Sign out leak (0.4.1).** Sign out first saves to the cloud, asks, ends the session, then clears the device and keeps a copy. The app also remembers whose log is on the device (`trck:owner`). If a different account signs in on a device that still holds someone else's log, even after a session simply ran out, that log is copied aside and the device starts empty instead of merging. Copies are listed under Your data in Plan with a Download button. Gap: a log that was on a device before owners were tracked counts as the next person's to adopt, so the first sign in on such a device still takes it. The sign out flow was tested by logic tests only, not against a real account.
+
+- **Lost edits between two devices (0.4.2).** A save now only goes through if the cloud row still has the `updated_at` that was read. If another device saved first, the app reads again, merges that device's changes in, and retries up to four times (`src/lib/cas.ts`). No database change was needed, because `updated_at` already exists and each write gets a stamp later than the one it read. Tested with a fake cloud where a second device saves in the middle of a save. Not tested against the real database: the first signed in sync after deploy is the proof. Still open from item 7: a phone with a wrong clock can win a tie on a day, which is a separate fix.
 
 ### Done in 0.4.0
 - First run screen: protein target from body weight, a start date, no one else's data. A new account on a clean device starts with no logged days (on a device that still holds someone else's log, see High item 1). Anyone with days, changed settings, or a finished setup never sees it. A signed-in person waits for their cloud log to load first. A new phone that only has a backup file restores it from Plan after tapping Start.

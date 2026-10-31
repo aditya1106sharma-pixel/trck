@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 - 2026-10-31
+- Phone and laptop saving at the same moment no longer lose an edit. If another device saved first, TRCK reads its changes, adds them to yours and saves again.
+- If that still cannot settle after a few tries, Plan says another device is saving. Tap Sync now a few seconds later.
+
 ## 0.4.1 - 2026-10-31
 - Signing out now clears the log from that device, so the next person to sign in there cannot get it mixed into their account. Your account keeps your log.
 - Before it clears, the app saves everything to your account first and asks you to confirm.
