@@ -3,6 +3,7 @@ import { addDays, todayKey, weekStart } from './dates'
 import { advise, fuelData } from './fuel'
 import { band, hoursLeft, overloadHint, prevSession, routine, weekEffective } from './muscles'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
+import { nextStamp, pushMerge, stable, type Remote } from './cas'
 import { createSyncQueue } from './queue'
 import { addBackup, blankData, loadFrom, MAX_BACKUPS, migrate, parseImport, readBackups, saveBackup, type Migration } from './store'
 import { level, score, streaks } from './score'
@@ -258,6 +259,102 @@ describe('sync queue', () => {
     let current: boolean | null = null
     expect(await q.run(async (isCurrent) => { current = isCurrent(); return true })).toBe(true)
     expect(current).toBe(true)
+  })
+})
+
+describe('two devices saving at once', () => {
+  const mk = (days: Record<string, number>) => parseImport(JSON.stringify({ days: Object.fromEntries(Object.entries(days).map(([k, u]) => [k, { w: u, u }])) }))
+  const keys = (d: { days: Record<string, unknown> }) => Object.keys(d.days).sort()
+  const always = async () => true
+
+  /** An in-memory cloud row with a version stamp. `beforeWrite` lets a test run another device in the middle of a save. */
+  function cloud(initial: ReturnType<typeof mk> | null) {
+    let row = initial ? { data: initial as unknown, updated_at: 't0' } : null
+    let n = 0
+    const writes: string[] = []
+    const remote = (beforeWrite?: () => Promise<void>): Remote => ({
+      read: async () => (row ? { data: row.data, updated_at: row.updated_at } : null),
+      write: async (data, expected) => {
+        await beforeWrite?.()
+        if ((row?.updated_at ?? null) !== expected) return { ok: false }
+        row = { data, updated_at: 't' + ++n }
+        writes.push(row.updated_at)
+        return { ok: true }
+      },
+    })
+    return { remote, writes, get data() { return row?.data as ReturnType<typeof mk> } }
+  }
+  const device = (c: ReturnType<typeof cloud>, start: ReturnType<typeof mk>, beforeWrite?: () => Promise<void>) => {
+    let local = start
+    const run = () => pushMerge({ remote: c.remote(beforeWrite), getLocal: () => local, apply: (m) => { local = m }, guard: always })
+    return { run, get local() { return local } }
+  }
+
+  it('creates the row on a first save', async () => {
+    const c = cloud(null)
+    expect(await device(c, mk({ '2026-10-30': 10 })).run()).toBe('saved')
+    expect(keys(c.data)).toEqual(['2026-10-30'])
+  })
+  it('keeps both edits when the other device saves in the middle of a save', async () => {
+    const c = cloud(mk({ '2026-10-30': 10 }))
+    const b = device(c, mk({ '2026-10-30': 10, '2026-10-31': 30 }))
+    let injected = false
+    const a = device(c, mk({ '2026-10-30': 10, '2026-11-01': 20 }), async () => {
+      if (injected) return
+      injected = true
+      expect(await b.run()).toBe('saved') // B saves after A read, before A writes
+    })
+    expect(await a.run()).toBe('saved')
+    expect(keys(c.data)).toEqual(['2026-10-30', '2026-10-31', '2026-11-01'])
+    expect(keys(a.local)).toEqual(['2026-10-30', '2026-10-31', '2026-11-01']) // A now holds B's edit too
+  })
+  it('keeps both when two new devices both find no row', async () => {
+    const c = cloud(null)
+    const b = device(c, mk({ '2026-10-31': 30 }))
+    let injected = false
+    const a = device(c, mk({ '2026-11-01': 20 }), async () => { if (!injected) { injected = true; await b.run() } })
+    expect(await a.run()).toBe('saved')
+    expect(keys(c.data)).toEqual(['2026-10-31', '2026-11-01'])
+  })
+  it('does not write when the cloud already matches', async () => {
+    const c = cloud(mk({ '2026-10-30': 10 }))
+    expect(await device(c, mk({ '2026-10-30': 10 })).run()).toBe('saved')
+    expect(c.writes).toEqual([])
+  })
+  it('pulls in a newer cloud edit without writing it back', async () => {
+    const c = cloud(mk({ '2026-10-30': 10, '2026-10-31': 30 }))
+    const d = device(c, mk({ '2026-10-30': 10 }))
+    expect(await d.run()).toBe('saved')
+    expect(keys(d.local)).toEqual(['2026-10-30', '2026-10-31'])
+    expect(c.writes).toEqual([])
+  })
+  it('gives up as busy, never loops forever, when every save loses the race', async () => {
+    const c = cloud(mk({ '2026-10-30': 10 }))
+    let tries = 0
+    const r = await pushMerge({
+      remote: { read: async () => ({ data: mk({ '2026-10-30': 10 }), updated_at: 't0' }), write: async () => { tries++; return { ok: false } } },
+      getLocal: () => mk({ '2026-10-30': 10, '2026-10-31': 30 }), apply: () => {}, guard: always,
+    })
+    expect(r).toBe('busy')
+    expect(tries).toBe(4)
+    expect(c.writes).toEqual([])
+  })
+  it('writes nothing once the guard says the person signed out', async () => {
+    const c = cloud(mk({ '2026-10-30': 10 }))
+    const r = await pushMerge({ remote: c.remote(), getLocal: () => mk({ '2026-10-30': 10, '2026-10-31': 30 }), apply: () => {}, guard: async () => false })
+    expect(r).toBe('cancelled')
+    expect(c.writes).toEqual([])
+  })
+  it('gives each write a later stamp than the one it read', () => {
+    const before = '2026-10-31T10:00:00.500Z'
+    expect(nextStamp(before, Date.parse(before) - 5000)).toBe('2026-10-31T10:00:00.501Z') // slow clock still moves forward
+    expect(nextStamp(before, Date.parse(before) + 5000)).toBe('2026-10-31T10:00:05.500Z')
+    expect(nextStamp(null, 0)).toBe('1970-01-01T00:00:00.000Z')
+    expect(Date.parse(nextStamp('2026-10-31T10:00:00.123456+00:00', 0))).toBeGreaterThan(Date.parse('2026-10-31T10:00:00.123456+00:00')) // a row with microseconds
+  })
+  it('compares by content, not key order', () => {
+    expect(stable({ b: 1, a: { d: [1, { y: 1, x: 2 }], c: 3 } })).toBe(stable({ a: { c: 3, d: [1, { x: 2, y: 1 }] }, b: 1 }))
+    expect(stable({ a: 1 })).not.toBe(stable({ a: 2 }))
   })
 })
 

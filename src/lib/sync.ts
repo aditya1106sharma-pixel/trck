@@ -1,11 +1,10 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { mergeData } from './merge'
+import { nextStamp, pushMerge, type Remote } from './cas'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
 import { createSyncQueue } from './queue'
 import { needsSetup } from './setup'
-import { blankData, parseImport, saveBackup, type Store } from './store'
-import type { AppData } from './types'
+import { blankData, saveBackup, type Store } from './store'
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -50,20 +49,39 @@ export function useSync(store: Store) {
           dataRef.current = blank
           store.replace(blank)
         }
-        const { data: row, error: e1 } = await client.from('trck_state').select('data').eq('user_id', who.user.id).maybeSingle()
-        if (e1) throw e1
-        if (!(await stillSignedIn())) return bail()
-        writeOwner(who.user.id)
-        const local = dataRef.current
-        const remote: AppData | null = row?.data ? parseImport(JSON.stringify(row.data)) : null
-        if (remote && row?.data && typeof (row.data as AppData).su === 'number') remote.su = (row.data as AppData).su
-        const merged = remote ? mergeData(local, remote) : local
-        if (JSON.stringify(merged) !== JSON.stringify(local)) store.replace(merged)
-        if (!remote || JSON.stringify(merged) !== JSON.stringify(remote)) {
-          if (!(await stillSignedIn())) return bail()
-          const { error: e2 } = await client.from('trck_state').upsert({ user_id: who.user.id, data: merged, updated_at: new Date().toISOString() })
-          if (e2) throw e2
+        const uid = who.user.id
+        const remote: Remote = {
+          async read() {
+            const { data: row, error } = await client.from('trck_state').select('data, updated_at').eq('user_id', uid).maybeSingle()
+            if (error) throw error
+            return row ? { data: row.data, updated_at: row.updated_at as string } : null
+          },
+          // Only writes if the row is still the one we read. Zero rows changed means another device saved first.
+          async write(data, expected) {
+            const next = nextStamp(expected)
+            if (expected === null) {
+              const { error } = await client.from('trck_state').insert({ user_id: uid, data, updated_at: next })
+              if (error?.code === '23505') return { ok: false } // someone created the row a moment ago
+              if (error) throw error
+              return { ok: true }
+            }
+            const { data: rows, error } = await client.from('trck_state').update({ data, updated_at: next }).eq('user_id', uid).eq('updated_at', expected).select('user_id')
+            if (error) throw error
+            return { ok: !!rows?.length }
+          },
         }
+        const outcome = await pushMerge({
+          remote,
+          getLocal: () => dataRef.current,
+          apply: (m) => { dataRef.current = m; store.replace(m) },
+          guard: async () => {
+            const ok = await stillSignedIn()
+            if (ok) writeOwner(uid)
+            return ok
+          },
+        })
+        if (outcome === 'cancelled') return bail()
+        if (outcome === 'busy') throw new Error('Another device is saving at the same moment. Tap Sync now in a few seconds.')
         setState('ok'); setError('')
         return true
       } catch (err) {
