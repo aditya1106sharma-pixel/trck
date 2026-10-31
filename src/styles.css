@@ -1,5 +1,5 @@
 :root{
-  --bg:#EDEBE6;--raise:#F6F4EF;--ink:#14130F;--mut:#6B6860;--line:#D3D0C8;--acc:#E8480C;--acc-ink:#fff;
+  --bg:#EDEBE6;--raise:#F6F4EF;--ink:#14130F;--mut:#6B6860;--line:#D3D0C8;--acc:#D2410A;--acc-ink:#fff;
   --ok:#3F7D2B;--warn:#A56A00;--bad:#C2312D;--dim:#DAD7CF;
   --display:'Big Shoulders Display','Arial Narrow',Impact,sans-serif;
   --body:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -173,9 +173,12 @@ pre.prompt{white-space:pre-wrap;font:13px/1.5 var(--body);background:var(--raise
 /* today's session */
 .session .session-list{margin-top:10px}
 .session .item{align-items:flex-start}
-.session .item .t small{display:block;margin-top:2px}
-.session-target{display:block;margin-top:4px;font-size:20px;line-height:1.1}
-.session .item .btn{flex:none;min-width:72px}
+.session .item .t small{display:block;margin-top:4px;line-height:1.35}
+.session-name{font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;line-height:1.05;overflow-wrap:break-word}
+.session-target{display:block;margin-top:6px;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.session-swap{flex:none;min-width:56px;min-height:44px;margin:-11px -4px 0 0;padding:0 4px;background:none;border:0;font-size:15px;font-weight:700;color:var(--ink);text-decoration:underline;text-underline-offset:4px}
+.session-swap:active{color:var(--acc)}
+.session-swap[disabled]{color:var(--mut);text-decoration:none;opacity:.6;cursor:default}
 .session-total{margin:12px 0 4px;font-size:15px}
 .session-total .num{font-size:20px}
 .session-skip{margin-top:4px}
@@ -194,13 +197,16 @@ pre.prompt{white-space:pre-wrap;font:13px/1.5 var(--body);background:var(--raise
 .photo .grow{flex:1 1 140px;min-height:52px}
 .photo .wide{width:100%;min-height:52px;margin-top:12px}
 .photo .privacy{margin-top:12px;line-height:1.5}
-.photo h3.num{font-size:34px;letter-spacing:.01em;text-transform:none;line-height:1}
-.photo h3.num+p{margin:6px 0 4px}
+.photo .range{font-size:20px;color:var(--mut);letter-spacing:.04em;line-height:1.05;min-width:0;overflow-wrap:break-word}
+.photo .range b{font-size:36px;color:var(--ink);letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.photo .range-p{margin:6px 0 4px;font-size:15px}
+.photo .range-p .num{font-size:22px}
 .photo .fatq{padding:14px 0;margin:12px 0 4px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .photo .fatq .t b{color:var(--ink)}
 .photo .fatq .t small{display:block;margin-top:2px}
 .photo .item .t b,.photo .item .t small{overflow-wrap:anywhere}
-.photo .item.gone .t{opacity:.45;text-decoration:line-through}
+.photo .item.gone .t b{color:var(--mut);text-decoration:line-through}
+.photo .linkbtn{min-width:44px}
 .photo .asks{margin-top:12px}
 .photo .tick{margin:12px 0 0;min-height:44px}
 .photo .tick input{width:22px;height:22px;accent-color:var(--acc);margin:0}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   applyMine, claudePrompt, defaultName, FAILURE_TEXT, fitSize, mealRange, parseReply, photoEntry,
   type Failure, type PhotoPart,
@@ -44,6 +44,9 @@ export function MealPhoto({ foods, onLog, onClose, toast }: {
   const [showPrompt, setShowPrompt] = useState(false)
   const camera = useRef<HTMLInputElement>(null)
   const library = useRef<HTMLInputElement>(null)
+  const head = useRef<HTMLHeadingElement>(null)
+  // When the reading finishes the buttons vanish, so move focus to the result instead of losing it.
+  useEffect(() => { if (stage.k === 'review') head.current?.focus() }, [stage.k])
 
   const review = (text: string): string => {
     const r = parseReply(text)
@@ -78,9 +81,10 @@ export function MealPhoto({ foods, onLog, onClose, toast }: {
     const setQ = (i: number, q: number) => setStage({ ...stage, parts: parts.map((x, j) => (j === i ? { ...x, q } : x)) })
     const kept = parts.filter((x) => x.q > 0)
     return (
-      <div className="sheet photo" aria-live="polite">
-        <h3 className="num">About {range.lo} to {range.hi} kcal</h3>
-        <p className="sm mut">{range.p} g protein. Rough numbers from a photo: check each item before you log it.</p>
+      <div className="sheet photo">
+        <h3 className="range" ref={head} tabIndex={-1} aria-live="polite">About <b>{range.lo}</b> to <b>{range.hi}</b> kcal</h3>
+        <p className="range-p"><span className="num">{range.p}</span> g protein</p>
+        <p className="sm mut">Rough numbers from a photo. Check each item before you log it.</p>
 
         <div className="item fatq">
           <div className="t"><b>How much oil, ghee or butter went in?</b><small>Teaspoons, about 40 kcal each. Count mayo, cream or a buttery sauce as 1 to 2.</small></div>
@@ -92,7 +96,7 @@ export function MealPhoto({ foods, onLog, onClose, toast }: {
             <div className={'item' + (x.q === 0 ? ' gone' : '')} key={i}>
               <div className="t">
                 <b>{x.n}</b>
-                <small>{x.u} · {f0(x.p * x.q)} g protein · {f0(x.k * x.q)} kcal{x.mine ? ' · your values' : x.conf < 0.5 ? ' · rough guess' : ''}</small>
+                <small>{x.u}, {f0(x.p * x.q)} g protein, {f0(x.k * x.q)} kcal{x.mine ? ', your values' : x.conf < 0.5 ? ', rough guess' : ''}</small>
               </div>
               <Stepper label={x.n} value={x.q} step={0.5} max={20} onChange={(v) => setQ(i, v)} />
             </div>

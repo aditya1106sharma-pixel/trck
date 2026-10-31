@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CATALOG, EQUIPMENT, MUSCLES, muscleLabel } from '../lib/catalog'
 import { dayBest, e1rm, knownExercise, overloadHint, prevSession, priorBest, routine, validSets } from '../lib/muscles'
-import { planSession, swapLift, toAdd, type SessionPlan } from '../lib/plan'
+import { planSession, swapLift, toAdd, trainedToday, type SessionPlan } from '../lib/plan'
 import { sessionsInWeek } from '../lib/score'
 import { blankDay, type Exercise, type MuscleId, type Settings } from '../lib/types'
 import { Section, r1 } from '../ui/bits'
@@ -41,7 +41,11 @@ export function Train({ store, sel, today }: ScreenProps) {
 
   return (
     <>
-      {sel === today && !planned.length && (
+      {sel === today && !planned.length && trainedToday(data.days, s, today) && (
+        <section className="session"><header><h2>Today's session</h2></header>
+          <p className="session-empty">You have trained today already. Check Muscles to see what is Ready.</p></section>
+      )}
+      {sel === today && !planned.length && !trainedToday(data.days, s, today) && (
         <TodaySession store={store} today={today} onStart={(ids) => {
           const add = toAdd(ids, s)
           if (add.length) setSettings((x) => { for (const id of add) addCatalog(x, id) })
@@ -134,9 +138,13 @@ function skipLine(sk: SessionPlan['skipped']): string {
 function TodaySession({ store, today, onStart }: { store: ScreenProps['store']; today: string; onStart: (ids: string[]) => void }) {
   const { data } = store
   const s = data.settings
-  const base = useMemo(() => planSession(data.days, s, today, Date.now()), [data.days, s, today])
+  // The hour is in the key so "ready in N h" does not go stale on a screen left open.
+  const hour = Math.floor(Date.now() / 36e5)
+  const base = useMemo(() => planSession(data.days, s, today, Date.now()), [data.days, s, today, hour])
   const [plan, setPlan] = useState<SessionPlan>(base)
-  useEffect(() => setPlan(base), [base])
+  // A sync or an edit rebuilds `base`. Only start over when the suggested lifts really changed, so a Swap is kept.
+  const baseKey = base.lifts.map((l) => l.id).join(',')
+  useEffect(() => setPlan(base), [baseKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const skipped = plan.skipped.filter((x) => x.why !== 'Done for this week')
   return (
     <section className="session">
@@ -150,17 +158,18 @@ function TodaySession({ store, today, onStart }: { store: ScreenProps['store']; 
             {plan.lifts.map((l, i) => (
               <div className="item" key={i}>
                 <div className="t">
-                  <b>{l.ex.n}</b>
+                  <b className="session-name">{l.ex.n}</b>
+                  <span className="session-target">{l.target}</span>
                   <small>{l.reason}</small>
-                  <span className="num session-target">{l.target}</span>
                 </div>
-                <button className="btn ghost" aria-label={`Swap ${l.ex.n}`} disabled={!l.alts.length}
-                  title={l.alts.length ? undefined : 'No other lift for this muscle today'}
+                <button className="session-swap" aria-label={`Swap ${l.ex.n}`} disabled={!l.alts.length}
+                  aria-describedby={l.alts.length ? undefined : `noswap-${i}`}
                   onClick={() => setPlan(swapLift(plan, i, data.days, s, today))}>Swap</button>
+                {!l.alts.length && <span id={`noswap-${i}`} hidden>No other lift for this muscle today</span>}
               </div>
             ))}
           </div>
-          <p className="session-total"><span className="num">{plan.sets}</span> sets · about <span className="num">{plan.minutes}</span> min</p>
+          <p className="session-total"><span className="num">{plan.sets}</span> sets, about <span className="num">{plan.minutes}</span> min</p>
           {skipped.length > 0 && <p className="sm mut session-skip">{skipLine(skipped)}</p>}
           <button className="btn acc session-start" onClick={() => onStart(plan.lifts.map((l) => l.id))}>Start this session</button>
         </>
