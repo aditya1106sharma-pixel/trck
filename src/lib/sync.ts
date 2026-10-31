@@ -1,6 +1,6 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { cleanCode, friendlyAuthError, friendlyCodeError, recoveryKind, recoveryTokens, resetRedirect } from './auth'
+import { cleanCode, friendlyAuthError, friendlyCodeError, recoveryKind, recoveryTokens, resetRedirect, signInTokens } from './auth'
 import { nextStamp, pushMerge, type Remote } from './cas'
 import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
 import { failureOf, type Failure } from './photo'
@@ -15,9 +15,14 @@ export const syncAvailable = !!(URL && KEY)
 // never sit in the browser history. The Supabase client is told not to read the address itself.
 const RESET_LINK = syncAvailable ? recoveryKind(window.location.hash, window.location.search) : null
 const RESET_TOKENS = RESET_LINK === 'recovery' ? recoveryTokens(window.location.hash) : null
-if (RESET_LINK) { try { history.replaceState(null, '', window.location.pathname) } catch { /* ignore */ } }
+// An emailed sign in link works the same way: read its proof at once, then wipe the address.
+const LINK_TOKENS = syncAvailable && !RESET_LINK ? signInTokens(window.location.hash) : null
+if (RESET_LINK || LINK_TOKENS) { try { history.replaceState(null, '', window.location.pathname) } catch { /* ignore */ } }
 const client: SupabaseClient | null = syncAvailable ? createClient(URL!, KEY!, { auth: { detectSessionInUrl: false } }) : null
 // The link only counts if Supabase accepts its tokens. Started once, here, so a second render cannot spend them twice.
+const LINK_PROOF: Promise<boolean> | null = client && LINK_TOKENS
+  ? client.auth.setSession(LINK_TOKENS).then((r) => !r.error && !!r.data.session, () => false)
+  : null
 const RESET_PROOF: Promise<boolean> | null = client && RESET_TOKENS
   ? client.auth.setSession(RESET_TOKENS).then((r) => !r.error && !!r.data.session, () => false)
   : null
@@ -64,6 +69,7 @@ export function useSync(store: Store) {
   useEffect(() => {
     if (!client) return
     ;(async () => {
+      if (LINK_PROOF) await LINK_PROOF // a good link starts the session, which getSession then finds
       if (RESET_PROOF) setProven(await RESET_PROOF)
       setSession((await client.auth.getSession()).data.session)
     })().catch(() => {}).finally(() => setLoading(false))
@@ -158,7 +164,7 @@ export function useSync(store: Store) {
   /** Emails a one time code. No password is involved. Returns a message only on failure. */
   const sendCode = async (email: string): Promise<string> => {
     if (!client) return 'Sync is not set up in this build.'
-    const { error } = await client.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
+    const { error } = await client.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: resetRedirect(window.location) } })
     return error ? friendlyAuthError(error.message) : ''
   }
   /** Checks the code from the email. On success the session starts and the app picks it up. Returns a message only on failure. */
