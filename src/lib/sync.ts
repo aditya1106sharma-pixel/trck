@@ -62,6 +62,9 @@ export function useSync(store: Store) {
   const [loading, setLoading] = useState(syncAvailable) // true until we know whether someone is signed in
   const [recoveryOver, setRecoveryOver] = useState(false)
   const [proven, setProven] = useState(false) // Supabase accepted the tokens from a reset link
+  // `store` is a new object on every render, so depending on it made syncNow new every render. Each sync changes the
+  // state, which renders, which scheduled the next sync 1.5 seconds later, forever. `replace` never changes.
+  const replace = store.replace
   const dataRef = useRef(store.data)
   dataRef.current = store.data
   const queue = useRef(createSyncQueue()).current
@@ -95,7 +98,7 @@ export function useSync(store: Store) {
           }
           const blank = blankData()
           dataRef.current = blank
-          store.replace(blank)
+          replace(blank)
         }
         const uid = who.user.id
         const remote: Remote = {
@@ -121,7 +124,7 @@ export function useSync(store: Store) {
         const outcome = await pushMerge({
           remote,
           getLocal: () => dataRef.current,
-          apply: (m) => { dataRef.current = m; store.replace(m) },
+          apply: (m) => { dataRef.current = m; replace(m) },
           guard: async () => {
             const ok = await stillSignedIn()
             if (ok) writeOwner(uid)
@@ -138,7 +141,7 @@ export function useSync(store: Store) {
         return false
       }
     })
-  }, [session, store, queue])
+  }, [session, replace, queue])
 
   // Push shortly after every change, and pull when the app comes back to the foreground.
   useEffect(() => {
