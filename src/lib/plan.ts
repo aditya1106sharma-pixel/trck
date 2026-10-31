@@ -1,7 +1,7 @@
 // Next session suggestion. Pure rules from docs/product/prds/PRD-next-session.md.
 import { CATALOG, LIFT_EQ, MUSCLES, SUGGEST, TARGET, muscleLabel } from './catalog'
 import { addDays } from './dates'
-import { dayEffective, hoursLeft, overloadHint, prevSession, routine, validSets, weekEffective, type Effective } from './muscles'
+import { allExercises, dayEffective, hoursLeft, overloadHint, prevSession, routine, validSets, weekEffective, type Effective } from './muscles'
 import type { Days } from './score'
 import type { Exercise, MuscleId, Settings } from './types'
 
@@ -182,11 +182,12 @@ export function planSession(days: Days, s: Settings, today: string, now: number)
 /** Put the next swap option in place of lift `i`. The old lift goes to the end so taps cycle. */
 export function swapLift(plan: SessionPlan, i: number, days: Days, s: Settings, today: string): SessionPlan {
   const l = plan.lifts[i]
-  const id = l?.alts[0]
+  const inPlan = new Set(plan.lifts.map((x) => x.id))
+  const id = l?.alts.find((a) => !inPlan.has(a))
   const ex = id ? pool(s).find((e) => e.id === id) : undefined
   if (!l || !ex) return plan
   const rt = new Set(routine(s).map((e) => e.id))
-  const next: PlanLift = { ...l, id: ex.id, ex, target: liftTarget(ex, days, today), variation: !rt.has(ex.id), alts: [...l.alts.slice(1), l.id] }
+  const next: PlanLift = { ...l, id: ex.id, ex, target: liftTarget(ex, days, today), variation: !rt.has(ex.id), alts: [...l.alts.filter((a) => a !== ex.id), l.id] }
   const lifts = plan.lifts.map((x, j) => (j === i ? next : x))
   const sets = lifts.reduce((a, x) => a + x.ex.s, 0)
   return { ...plan, lifts, sets, minutes: sets * MIN_PER_SET }
@@ -197,3 +198,7 @@ export const toAdd = (ids: string[], s: Settings): string[] => {
   const rt = new Set(routine(s).map((e) => e.id))
   return ids.filter((id) => !rt.has(id))
 }
+
+/** True when today already has sets logged, so the card should not suggest muscles that were just trained. */
+export const trainedToday = (days: Days, s: Settings, today: string): boolean =>
+  allExercises(s).some((ex) => validSets(days[today]?.lift[ex.id]).length > 0)

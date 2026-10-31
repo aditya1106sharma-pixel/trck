@@ -15,7 +15,7 @@ const SYSTEM = `You read photos of meals for a personal food log in India. The n
 List every separate food or ingredient you can see as its own item, never one total for the plate.
 For each item give the cooked weight in grams, the count if it comes in pieces (rotis, eggs, idlis), protein, fat and carbs in grams for that weight, kcal, and your confidence from 0 to 1.
 Use Indian names and household units where usual (roti, katori of dal, ladle of rice). For dal, sabzi or curry, list the main ingredient and the gravy separately when you can.
-Do not list cooking oil, ghee or butter as items. Put your best guess of the teaspoons used in fat_tsp. Photos hide fat, so do not guess low.
+Do not list cooking oil, ghee or butter as items. Put your best guess of the teaspoons used in fat_tsp, and leave that added fat out of each item's fat and kcal so it is not counted twice. Photos hide fat, so do not guess low.
 In questions, ask up to 3 short questions whose answers would change the numbers most, such as hidden sauces, the cut of meat, or how many pieces.
 The user's note beats the photo. Reply with JSON only.`
 
@@ -52,6 +52,9 @@ Deno.serve(async (req) => {
   const asUser = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } })
   const { data: who, error: authError } = await asUser.auth.getUser()
   if (authError || !who.user) return json(401, { error: 'signed-out' })
+  // Optional guest list. Sign ups are open, so set ALLOWED_USERS (comma separated user ids) to keep strangers off the shared free quota.
+  const guests = (Deno.env.get('ALLOWED_USERS') ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+  if (guests.length && !guests.includes(who.user.id)) return json(403, { error: 'not-allowed' })
 
   // 2. What they sent. Only a JPEG as base64 and a short note.
   let body: { image?: unknown; note?: unknown }

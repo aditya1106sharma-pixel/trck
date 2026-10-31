@@ -40,7 +40,7 @@ function confOf(v: unknown): number {
   }
   const n = num(v)
   if (n == null) return 0.5
-  const c = n > 1 && n <= 100 ? n / 100 : n // some replies use percent
+  const c = n > 1 && n <= 100 && Number.isInteger(n) ? n / 100 : n // some replies use percent
   return Math.max(0, Math.min(1, c))
 }
 
@@ -87,6 +87,7 @@ export function parseReply(text: string): Parsed {
     if (FAT_NAME.test(name)) { fatTsp = Math.min(MAX_FAT_TSP, fatTsp + g / FAT_PER_TSP); continue }
     const fromMacros = 4 * p + 4 * cb + 9 * f
     if (k == null || k <= 0 || (fromMacros > 0 && Math.abs(k - fromMacros) / fromMacros > 0.35)) k = fromMacros
+    if (p + f + cb > g * 1.05) { dropped.push(name); continue } // macros cannot weigh more than the food
     if (g > MAX_ITEM_GRAMS || k > MAX_ITEM_KCAL || p > 300 || f > 300 || cb > 600 || k <= 0) { dropped.push(name); continue }
     const count = num(o.count)
     parts.push({
@@ -141,7 +142,8 @@ export function applyMine(parts: PhotoPart[], mine: Food[]): PhotoPart[] {
     if (!f) return x
     const per = gramsPerUnit(f.u)
     const count = /^(\d+) · /.exec(x.u ?? '')?.[1]
-    const q = per ? x.g / per : count ? Number(count) : null
+    const perPiece = /^1\s/.test(f.u) // "1 medium" scales by pieces; "2 small" or "1 cup" of rice do not
+    const q = per ? x.g / per : count && perPiece && !/\bcup|bowl|katori|ladle|tbsp|tsp\b/i.test(f.u) ? Number(count) : null
     if (!q) return x
     return { ...x, n: f.n, p: f.p, f: f.f, cb: f.cb, k: kcalOf(f), q: half(q), u: f.u, t: f.t, mine: true, conf: Math.max(x.conf, 0.8) }
   })
@@ -200,7 +202,7 @@ export const defaultName = (parts: PhotoPart[]) => {
   return names.join(' and ') + (parts.length > 2 ? ' and more' : '')
 }
 
-export type Failure = 'offline' | 'signed-out' | 'cap' | 'not-set-up' | 'failed'
+export type Failure = 'offline' | 'signed-out' | 'cap' | 'not-set-up' | 'not-allowed' | 'failed'
 
 /** What went wrong, from the Edge Function's answer. Every case leads to the Claude fallback, never a dead end. */
 export function failureOf(status: number, body: unknown): Failure {
@@ -208,6 +210,7 @@ export function failureOf(status: number, body: unknown): Failure {
   if (status === 0) return 'offline'
   if (status === 401 || e === 'signed-out') return 'signed-out'
   if (status === 429 || e === 'cap') return 'cap'
+  if (status === 403 || e === 'not-allowed') return 'not-allowed'
   if (status === 404 || e === 'no-key') return 'not-set-up'
   return 'failed'
 }
@@ -217,6 +220,7 @@ export const FAILURE_TEXT: Record<Failure, string> = {
   'signed-out': 'Reading photos needs you signed in. Sign in under Plan, Sync.',
   cap: `That is ${PHOTO_CAP} photos today, the daily limit. It resets at 5:30 am.`,
   'not-set-up': 'Photo reading is not switched on yet.',
+  'not-allowed': 'Photo reading is switched on only for some accounts, and this one is not on the list.',
   failed: 'The photo could not be read this time.',
 }
 
@@ -228,7 +232,7 @@ export function claudePrompt(note: string): string {
     '',
     'Before you answer, ask me anything that would change the numbers a lot. Always ask how much oil, ghee or butter went in and whether there were sauces, mayo or cream, because photos miss hidden fat.',
     '',
-    'Then list every separate food or ingredient as its own item, not one total. Use Indian names and household units (roti, katori, ladle). For each item give the cooked weight in grams, the count if it comes in pieces, protein, fat and carbs in grams, kcal, and your confidence from 0 to 1. Put cooking oil, ghee or butter in fat_tsp (teaspoons), not as an item.',
+    'Then list every separate food or ingredient as its own item, not one total. Use Indian names and household units (roti, katori, ladle). For each item give the cooked weight in grams, the count if it comes in pieces, protein, fat and carbs in grams, kcal, and your confidence from 0 to 1. Put cooking oil, ghee or butter in fat_tsp (teaspoons), not as an item, and leave that fat out of the fat and kcal of each item so it is not counted twice.',
     '',
     'Reply with JSON only, in exactly this shape:',
     '{"items":[{"name":"Roti","grams":80,"count":2,"protein":6,"fat":5,"carbs":36,"kcal":210,"confidence":0.7}],"questions":[],"fat_tsp":1}',

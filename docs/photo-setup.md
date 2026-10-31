@@ -25,6 +25,11 @@ The key never goes in the app, in GitHub, or in a chat. It lives only as a secre
 3. Only if the model name differed in step 3: add `GEMINI_MODEL` with that exact name.
 4. Close the AI Studio tab. The key now lives only in Supabase.
 
+## Step 4b. Two safety settings
+1. **Never turn on billing** for the `trck` project in Google Cloud. With no card attached the free quota simply runs out and stops, which keeps this free.
+2. Add a secret `ALLOWED_ORIGIN` with your site address, for example `https://aditya1106sharma-pixel.github.io`, so only your app can call the function from a browser.
+3. Sign ups are open, so anyone with an account could use up the shared free quota. To limit it, add a secret `ALLOWED_USERS` with the user ids allowed to read photos, separated by commas (Supabase, Authentication, Users, copy the id). Leave it out and every signed in account gets the 20 a day cap.
+
 ## Step 5. Deploy the function
 Easiest, no install: Supabase, **Edge Functions**, **Deploy a new function**, **Via editor**. Name it exactly `meal-photo`. Paste `supabase/functions/meal-photo/index.ts` into `index.ts`, add a second file `config.ts` with the content of `supabase/functions/meal-photo/config.ts`, then **Deploy**. Leave "Verify JWT" on.
 

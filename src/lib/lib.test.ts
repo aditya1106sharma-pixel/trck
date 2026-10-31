@@ -495,7 +495,7 @@ describe('sync merge', () => {
   })
 })
 
-import { liftTarget, MAX_MIN, MIN_PER_SET, planSession, swapLift, trainingStyle } from './plan'
+import { liftTarget, MAX_MIN, MIN_PER_SET, planSession, swapLift, trainedToday, trainingStyle } from './plan'
 import { atHour } from './dates'
 describe('next session', () => {
   const T = '2026-10-31'
@@ -598,5 +598,22 @@ describe('next session', () => {
     expect(hoursLeft({ [addDays(T, -1)]: day({ lift: { pulldown: st(3), row: st(3) } }) }, S23, 'back', NOW)).toBeGreaterThan(0)
     expect(ids(p)).toContain('rdl')
     expect(p.lifts.every((l) => l.ex.m.back !== 1)).toBe(true)
+  })
+  it('never puts the same lift in the plan twice, even after swapping two lifts with a shared option', () => {
+    let p = planSession(upperYesterday(), S23, T, NOW)
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < p.lifts.length; i++) p = swapLift(p, i, upperYesterday(), S23, T)
+      expect(new Set(ids(p)).size).toBe(ids(p).length)
+    }
+  })
+  it('knows when today already has sets, so the card is not offered after a session', () => {
+    const d = { ...upperYesterday(), [T]: day({ lift: { chest: [{ w: 30, r: 10 }] } }) }
+    expect(trainedToday(d, S23, T)).toBe(true)
+    expect(trainedToday(upperYesterday(), S23, T)).toBe(false)
+  })
+  it('counts a 1 am session on the previous day key for the 48 hour rule', () => {
+    const d = { '2026-10-30': day({ lift: { legpress: [{ w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 10 }] } }) }
+    const p = planSession(d, S23, T, atHour(T, 20))
+    expect(ids(p)).not.toContain('legpress') // trained on the 30th at 23:00, ready again on the 1st at 23:00
   })
 })

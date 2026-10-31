@@ -122,6 +122,31 @@ describe('photo: your values win', () => {
   })
 })
 
+describe('photo: review fixes', () => {
+  it('drops an item whose macros weigh more than the food', () => {
+    const r = parseReply(JSON.stringify({ items: [
+      { name: 'Impossible', grams: 100, protein: 250, fat: 1, carbs: 1, kcal: 1000, confidence: 0.9 },
+      { name: 'Roti', grams: 40, protein: 3, fat: 2.5, carbs: 18, kcal: 105, confidence: 0.7 },
+    ] }))
+    expect(r.ok && r.reply.parts.map((x) => x.n)).toEqual(['Roti'])
+    expect(r.ok && r.reply.dropped).toEqual(['Impossible'])
+  })
+  it('does not multiply a multi piece or cup unit by the photo count', () => {
+    const mine: Food[] = [{ n: 'Roti', p: 4, f: 1, cb: 20, u: '2 small', t: 'custom' }]
+    const parts = applyMine(ok(good).parts, mine)
+    expect(parts.find((x) => x.n === 'Roti')!.mine).toBe(false)
+    const rice = ok(JSON.stringify({ items: [{ name: 'Rice', grams: 200, count: 2, protein: 5, fat: 0.5, carbs: 56, kcal: 250, confidence: 0.7 }] }))
+    expect(applyMine(rice.parts, [])[0].mine).toBe(false) // "1 cup cooked" must not become 2 cups from 2 ladles
+  })
+  it('keeps a confidence like 1.5 as a clamped value, not 1.5 percent', () => {
+    const r = ok(JSON.stringify({ items: [{ name: 'Rice', grams: 150, protein: 4, fat: 0.4, carbs: 45, kcal: 200, confidence: 1.5 }] }))
+    expect(r.parts[0].conf).toBe(1)
+  })
+  it('both prompts say item fat leaves out the cooking fat', () => {
+    expect(claudePrompt('')).toMatch(/not counted twice/)
+  })
+})
+
 describe('photo: range and logged entry', () => {
   const part = (k: number, conf: number, mine = false, p = 10): PhotoPart => ({ n: 'X' + k, p, f: 1, cb: 1, k, q: 1, g: 100, conf, mine })
   it('widens the range as confidence drops', () => {
