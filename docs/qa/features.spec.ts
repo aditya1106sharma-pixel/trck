@@ -198,14 +198,19 @@ test('after sign in with an empty account the screen holds still and sync does n
   let reads = 0
   await page.route('**/auth/v1/user**', (r) => r.fulfill({ json: { id: USER, aud: 'authenticated', role: 'authenticated', email: 'e2e@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-10-01T00:00:00Z' } }))
   await page.route('**/rest/v1/trck_state**', (r) => {
-    if (r.request().method() === 'GET') { reads++; return r.fulfill({ json: [] }) } // an account with nothing saved yet
-    return r.fulfill({ status: 201, body: '' })
+    // A real network takes time, and that is when the screen used to flip. Each answer is held back a little.
+    return new Promise<void>((done) => setTimeout(() => {
+      if (r.request().method() === 'GET') { reads++; void r.fulfill({ json: [] }) } // an account with nothing saved yet
+      else void r.fulfill({ status: 201, body: '' })
+      done()
+    }, 350))
   })
   await page.goto(`/#access_token=${jwt}&refresh_token=e2e-refresh&expires_in=3600&token_type=bearer&type=magiclink`)
   await expect(page.getByRole('heading', { name: 'Set up' })).toBeVisible()
   // Watch the screen for a few seconds. It must not flip between Set up and Today.
   const seen = new Set<string>()
-  for (let i = 0; i < 18; i++) {
+  await page.waitForTimeout(1500) // let the first sync finish
+  for (let i = 0; i < 24; i++) {
     seen.add((await page.getByRole('heading', { name: 'Set up' }).count()) ? 'setup' : 'other')
     await page.waitForTimeout(250)
   }
