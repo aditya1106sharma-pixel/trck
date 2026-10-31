@@ -22,6 +22,8 @@ Plan, then **Download backup**. Do it once a week. To bring a log back, or move 
 ## Use it on two devices (optional)
 Plan, then Sync, then **Create account** with an email and a password you will remember. Sign in the same way on your other device and your log follows you.
 
+Signing out clears the log from that device, so the next person to use it starts fresh. Your account keeps your log, and a copy stays on the device under Plan, Your data, Copies kept on this device.
+
 Two things to know before you do:
 - **There is no password reset yet.** If you forget the password, the cloud copy is out of reach. Your backup file still works.
 - **Aditya can technically see saved logs.** They are stored in his free Supabase project, and the owner of a project can open its tables. Do not put anything in your notes that you would not want him to read.

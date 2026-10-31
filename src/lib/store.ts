@@ -41,14 +41,18 @@ export function readBackups(mem: Mem = localStorage): Backup[] {
   }
 }
 
-/** Keeps the last 5 snapshots. If storage is nearly full it keeps fewer, down to just this one. */
-export function saveBackup(json: string, reason: string, mem: Mem = localStorage, now = Date.now()): void {
+/**
+ * Keeps the last 5 snapshots. If storage is nearly full it keeps fewer, down to just this one, which drops the oldest first.
+ * Returns false when not even this one fits, so a caller about to clear data can stop.
+ */
+export function saveBackup(json: string, reason: string, mem: Mem = localStorage, now = Date.now()): boolean {
   const list = readBackups(mem)
-  if (list[list.length - 1]?.json === json) return
+  if (list[list.length - 1]?.json === json) return true
   const next = addBackup(list, { at: now, reason, json })
   for (const keep of [MAX_BACKUPS, 2, 1]) {
-    try { mem.setItem(BACKUP_KEY, JSON.stringify(next.slice(-keep))); return } catch { /* try fewer */ }
+    try { mem.setItem(BACKUP_KEY, JSON.stringify(next.slice(-keep))); return true } catch { /* try fewer */ }
   }
+  return false
 }
 
 export function normDay(raw: Partial<Day> | undefined): Day {
@@ -91,9 +95,13 @@ export function storedVersion(raw: string): number {
   }
 }
 
+export function blankData(): AppData {
+  return { version: SCHEMA_VERSION, days: {}, settings: normSettings(undefined), su: 0 }
+}
+
 /** `locked` means the device holds data from a newer TRCK. Nothing may be saved over it until the app is updated. */
 export function loadFrom(raw: string | null, mem: Mem = localStorage): { data: AppData; locked: boolean } {
-  const blank: AppData = { version: SCHEMA_VERSION, days: {}, settings: normSettings(undefined), su: 0 }
+  const blank = blankData()
   if (!raw) return { data: blank, locked: false }
   try {
     if (storedVersion(raw) < SCHEMA_VERSION) saveBackup(raw, 'before upgrade', mem)
@@ -116,8 +124,8 @@ export type Store = {
   locked: boolean
   mutate: (key: string, fn: (d: Day) => void) => void
   setSettings: (fn: (s: Settings) => void) => void
-  /** Pass `backup` to snapshot what is on the device first, as an import does. */
-  replace: (d: AppData, backup?: boolean) => void
+  /** Pass `backup` to snapshot what is on the device first, as an import does. Returns false, and changes nothing, if that copy cannot be kept. */
+  replace: (d: AppData, backup?: boolean) => boolean
   saveError: boolean
 }
 
@@ -158,8 +166,9 @@ export function useStore(): Store {
   }, [])
 
   const replace = useCallback((d: AppData, backup = false) => {
-    if (backup) saveBackup(JSON.stringify(latest.current), 'before import')
+    if (backup && !saveBackup(JSON.stringify(latest.current), 'before import')) return false
     setData(d)
+    return true
   }, [])
 
   return { data, locked: boot.locked, mutate, setSettings, replace, saveError }

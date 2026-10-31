@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { addDays, todayKey, weekStart } from './dates'
 import { advise, fuelData } from './fuel'
 import { band, hoursLeft, overloadHint, prevSession, routine, weekEffective } from './muscles'
-import { addBackup, loadFrom, MAX_BACKUPS, migrate, parseImport, readBackups, saveBackup, type Migration } from './store'
+import { clearOwner, ownerAction, readOwner, writeOwner } from './owner'
+import { createSyncQueue } from './queue'
+import { addBackup, blankData, loadFrom, MAX_BACKUPS, migrate, parseImport, readBackups, saveBackup, type Migration } from './store'
 import { level, score, streaks } from './score'
 import { applySetup, needsSetup, proteinFor, showSetup, validWeight } from './setup'
 import { blankDay, DEFAULT_SETTINGS, type Day } from './types'
@@ -178,6 +180,87 @@ describe('first run', () => {
   })
 })
 
+describe('one device, many people', () => {
+  const mem = () => {
+    const m = new Map<string, string>()
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) }, removeItem: (k: string) => { m.delete(k) } }
+  }
+  it('keeps the log when the same person signs in again', () => { expect(ownerAction('a', 'a', true)).toBe('keep') })
+  it('clears and backs up a log that belongs to someone else, instead of merging it in', () => {
+    expect(ownerAction('a', 'b', true)).toBe('clear')
+  })
+  it('lets a new person take an empty device', () => { expect(ownerAction('a', 'b', false)).toBe('adopt') })
+  it('adopts a log that nobody has claimed yet, as from before owners were tracked', () => {
+    expect(ownerAction(null, 'b', true)).toBe('adopt')
+  })
+  it('remembers and forgets the owner', () => {
+    const m = mem()
+    expect(readOwner(m)).toBeNull()
+    writeOwner('a', m)
+    expect(readOwner(m)).toBe('a')
+    clearOwner(m)
+    expect(readOwner(m)).toBeNull()
+  })
+  it('never throws when storage is blocked', () => {
+    const blocked = { getItem: () => { throw new Error('no') }, setItem: () => { throw new Error('no') }, removeItem: () => { throw new Error('no') } }
+    expect(readOwner(blocked)).toBeNull()
+    expect(() => { writeOwner('a', blocked); clearOwner(blocked) }).not.toThrow()
+  })
+  it('a blank start is empty and asks for setup, so the next person starts clean', () => {
+    const b = blankData()
+    expect(Object.keys(b.days)).toHaveLength(0)
+    expect(needsSetup(b)).toBe(true)
+    expect(b.settings.start).toBe(DEFAULT_SETTINGS.start) // replaced when they finish setup
+  })
+})
+
+describe('sync queue', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const gate = () => { let open!: () => void; const p = new Promise<void>((r) => { open = r }); return { p, open } }
+
+  it('runs one sync at a time, in order', async () => {
+    const q = createSyncQueue(); const log: string[] = []; const g = gate()
+    const first = q.run(async () => { log.push('a start'); await g.p; log.push('a end'); return true })
+    await tick()
+    const second = q.run(async () => { log.push('b'); return true })
+    await tick()
+    expect(log).toEqual(['a start'])
+    g.open()
+    expect(await Promise.all([first, second])).toEqual([true, true])
+    expect(log).toEqual(['a start', 'a end', 'b'])
+  })
+  it('lets two calls made before a run starts share it', async () => {
+    const q = createSyncQueue(); let runs = 0
+    const task = async () => { runs += 1; return true }
+    await Promise.all([q.run(task), q.run(task), q.run(task)])
+    expect(runs).toBe(1)
+  })
+  it('on stop, drops queued syncs and waits for the one in flight, which is told it is no longer current', async () => {
+    const q = createSyncQueue(); const g = gate(); let sawCurrent: boolean | null = null; let queuedRan = false
+    const inFlight = q.run(async (isCurrent) => { await g.p; sawCurrent = isCurrent(); return false })
+    await tick()
+    const queued = q.run(async () => { queuedRan = true; return true })
+    let stopped = false
+    const stopping = q.stop().then(() => { stopped = true })
+    await tick()
+    expect(stopped).toBe(false) // still waiting for the one in flight
+    g.open()
+    await stopping
+    expect(sawCurrent).toBe(false)
+    expect(await queued).toBe(false)
+    expect(queuedRan).toBe(false)
+    await inFlight
+  })
+  it('works again after a stop, and one failed sync does not block the next', async () => {
+    const q = createSyncQueue()
+    await q.stop()
+    await expect(q.run(async () => { throw new Error('offline') })).rejects.toThrow('offline')
+    let current: boolean | null = null
+    expect(await q.run(async (isCurrent) => { current = isCurrent(); return true })).toBe(true)
+    expect(current).toBe(true)
+  })
+})
+
 describe('schema version', () => {
   const addNote: Migration = (r) => ({ ...r, extra: 'kept' })
   it('treats data with no version as version 1', () => {
@@ -241,6 +324,11 @@ describe('local backups', () => {
     const m = mem()
     expect(loadFrom(null, m)).toMatchObject({ locked: false, data: { days: {} } })
     expect(readBackups(m)).toEqual([])
+  })
+  it('says so when not even one copy fits, so a caller can refuse to clear data', () => {
+    const full = { getItem: () => null, setItem: () => { throw new Error('quota') } }
+    expect(saveBackup('{"a":1}', 'before sign out', full)).toBe(false)
+    expect(saveBackup('{"a":1}', 'before sign out', mem())).toBe(true)
   })
   it('ignores a damaged backup list', () => {
     expect(readBackups({ getItem: () => 'not json', setItem: () => {} })).toEqual([])
