@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { addSets, claudePrompt, demoLink, ensureLift, findLift, parseCoachReply, type Card } from '../lib/coach'
+import { useEffect, useRef, useState } from 'react'
+import { addSets, claudePrompt, demoLink, ensureLift, findLift, parseCoachReply, readCard, type Card } from '../lib/coach'
 import { buildContext } from '../lib/context'
 import { muscleLabel } from '../lib/catalog'
 import type { Store } from '../lib/store'
@@ -9,10 +9,20 @@ type Msg = { id: string; role: 'me' | 'coach'; text?: string; attached?: string;
 const KEY = 'trck:coach' // this phone only. Not synced, and never holds a photo.
 const MAX_MSGS = 30
 
+/** Reads the saved thread. Every card goes through the same checks as a pasted reply, so a damaged save cannot blank the screen. */
 function readThread(): Msg[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '[]')
-    return Array.isArray(raw) ? raw.filter((m): m is Msg => !!m && typeof m.id === 'string' && (m.role === 'me' || m.role === 'coach')).slice(-MAX_MSGS) : []
+    if (!Array.isArray(raw)) return []
+    return raw.slice(-MAX_MSGS).flatMap((m: unknown): Msg[] => {
+      if (!m || typeof m !== 'object') return []
+      const o = m as Record<string, unknown>
+      if (typeof o.id !== 'string') return []
+      if (o.role === 'me') return [{ id: o.id, role: 'me', text: typeof o.text === 'string' ? o.text.slice(0, 600) : '', attached: typeof o.attached === 'string' ? o.attached.slice(0, 200) : undefined }]
+      if (o.role !== 'coach' || !Array.isArray(o.cards)) return []
+      const cards = o.cards.flatMap((c: unknown) => { const k = readCard(c); return k ? [{ ...k, done: !!(c as { done?: unknown }).done }] : [] })
+      return cards.length ? [{ id: o.id, role: 'coach', cards }] : []
+    })
   } catch { return [] }
 }
 function writeThread(t: Msg[]) { try { localStorage.setItem(KEY, JSON.stringify(t.slice(-MAX_MSGS))) } catch { /* private mode */ } }
@@ -23,7 +33,7 @@ const SpeechCtor = (): (new () => Rec) | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
-export function Trainer({ store, sel, toast }: { store: Store; sel: string; toast: (m: string) => void }) {
+export function Trainer({ store, sel, today, toast }: { store: Store; sel: string; today: string; toast: (m: string) => void }) {
   const { data, mutate, setSettings } = store
   const s = data.settings
   const [thread, setThread] = useState<Msg[]>(readThread)
@@ -35,7 +45,10 @@ export function Trainer({ store, sel, toast }: { store: Store; sel: string; toas
   const rec = useRef<Rec | null>(null)
 
   const push = (fn: (t: Msg[]) => Msg[]) => setThread((t) => { const n = fn(t).slice(-MAX_MSGS); writeThread(n); return n })
-  const context = () => buildContext(data.days, s, sel, Date.now())
+  const context = () => buildContext(data.days, s, today, Date.now())
+  const onDay = sel === today ? '' : ` on ${sel}`
+  const busy = useRef(new Set<string>()) // a Log tapped twice must log once
+  useEffect(() => () => { rec.current?.stop() }, []) // leaving the tab ends the mic
 
   const copy = async (text: string, ok: string) => {
     try { await navigator.clipboard.writeText(text); toast(ok) } catch { toast('Could not copy. Try again.') }
@@ -45,7 +58,8 @@ export function Trainer({ store, sel, toast }: { store: Store; sel: string; toas
     const prompt = claudePrompt(context(), q)
     const attached = files.map((f) => f.name).join(', ')
     // Copy and share in the same tap, so the browser allows both. The photo goes to Claude, never to TRCK.
-    void navigator.clipboard?.writeText(prompt).catch(() => {})
+    const copied = navigator.clipboard?.writeText(prompt).then(() => true, () => false) ?? Promise.resolve(false)
+    void copied.then((ok) => { if (!ok) toast('Could not copy the question. Tap Copy my week and type your question in Claude.') })
     if (files.length && navigator.canShare?.({ files })) {
       navigator.share({ files, text: prompt }).catch(() => {})
       toast('Pick Claude. If the question does not come along, paste it.')
@@ -68,15 +82,19 @@ export function Trainer({ store, sel, toast }: { store: Store; sel: string; toas
   const done = (mid: string, i: number) => push((t) => t.map((m) => (m.id === mid ? { ...m, cards: m.cards?.map((c, j) => (j === i ? { ...c, done: true } : c)) } : m)))
 
   const act = (mid: string, i: number, c: Card) => {
+    const lock = `${mid}:${i}`
+    if (busy.current.has(lock)) return
+    busy.current.add(lock)
     if (c.type === 'log') {
       const newId = 'x_' + uid()
       const id = findLift(c.lift, s)?.id ?? newId
       setSettings((x) => { ensureLift(x, c.lift, c.muscles, newId) })
       mutate(sel, (d) => { addSets(d, id, c.sets) })
-      toast(`${c.sets.length} set${c.sets.length === 1 ? '' : 's'} logged`)
+      toast(`${c.sets.length} set${c.sets.length === 1 ? '' : 's'} logged${onDay}`)
     } else if (c.type === 'soreness') {
-      mutate(sel, (d) => { d.sore = { ...d.sore, [c.muscle]: c.level } })
-      toast('Soreness saved. It can delay Ready.')
+      // Soreness only ever delays: a report can raise the level, never lower one already saved.
+      mutate(sel, (d) => { d.sore = { ...d.sore, [c.muscle]: Math.max(d.sore?.[c.muscle] ?? 0, c.level) } })
+      toast(`Soreness saved${onDay}. It can delay Ready.`)
     } else if (c.type === 'exercise' && c.muscles.length) {
       setSettings((x) => { ensureLift(x, c.name, c.muscles, 'x_' + uid()) })
       toast('Added to your lifts')
@@ -110,7 +128,7 @@ export function Trainer({ store, sel, toast }: { store: Store; sel: string; toas
       <div className="row wrap" style={{ marginTop: 10 }}>
         <label className="btn ghost filebtn">Photo<input type="file" accept="image/*" capture="environment" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setFiles((a) => [...a, f].slice(-3)); e.target.value = '' }} /></label>
         <label className="btn ghost filebtn">Clip<input type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setFiles((a) => [...a, f].slice(-3)); e.target.value = '' }} /></label>
-        {SpeechCtor() && <button className="btn ghost" aria-pressed={listening} onClick={voice}>{listening ? 'Listening' : 'Voice'}</button>}
+        {SpeechCtor() && <button className="btn ghost" aria-pressed={listening} onClick={voice}>Voice</button>}
         <button className="btn acc grow" disabled={!q.trim() && !files.length} onClick={ask}>Ask Claude</button>
       </div>
       {files.length > 0 && (
@@ -136,7 +154,7 @@ export function Trainer({ store, sel, toast }: { store: Store; sel: string; toas
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" disabled={!paste.trim()} onClick={read}>Read the reply</button>
       </div>
-      <p className="sm mut" style={{ marginTop: 10 }}>Nothing is logged until you tap Log. Soreness and form are not medical advice. Body photos stay on this phone.</p>
+      <p className="sm mut" style={{ marginTop: 10 }}>Nothing is logged until you tap Log. Soreness and form are not medical advice. Body photos stay on this phone. Voice uses your browser's own speech service, which may send audio to its maker.</p>
     </section>
   )
 }

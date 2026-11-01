@@ -315,3 +315,31 @@ test('soreness keeps a muscle out of tonight, and measurements save with a due d
   await expect(card.getByText(/Chest/).first()).toBeVisible()
   await expect(card.getByText('Chest press', { exact: true })).toHaveCount(0) // sore a lot: out of tonight's plan
 })
+
+test('a damaged saved thread does not blank Train, and Log twice logs once', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('trck:coach', JSON.stringify([
+      { id: 'a', role: 'me', text: 'Old question' },
+      { id: 'b', role: 'coach', cards: [{ type: 'log', lift: 'Leg press' }, { type: 'note', text: 'Still here' }, 7, null] },
+      { id: 'c', role: 'coach', cards: 'nope' }, 'junk', null,
+    ]))
+  })
+  await trainFor(page)
+  await expect(page.getByRole('heading', { name: 'Trainer' })).toBeVisible()
+  await expect(page.getByText('Old question')).toBeVisible()
+  await expect(page.getByText('Still here')).toBeVisible()
+  await page.getByLabel("Claude's reply").fill(JSON.stringify({ cards: [{ type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }] }] }))
+  await page.getByRole('button', { name: 'Read the reply' }).click()
+  const log = page.getByRole('button', { name: 'Log 1 set' })
+  await log.dblclick()
+  const t = (await stored(page)).days[todayKey()]
+  expect(t.lift.legpress).toEqual([{ w: 60, r: 10 }]) // once, under the routine lift, not twice
+})
+
+test('a saved soreness report cannot lower a level the person already set', async ({ page }) => {
+  await trainFor(page, { [todayKey()]: { sore: { back: 3 } } })
+  await page.getByLabel("Claude's reply").fill(JSON.stringify({ cards: [{ type: 'soreness', muscle: 'back', level: 1, note: 'a little' }] }))
+  await page.getByRole('button', { name: 'Read the reply' }).click()
+  await page.getByRole('button', { name: 'Save soreness' }).click()
+  expect((await stored(page)).days[todayKey()].sore).toEqual({ back: 3 })
+})

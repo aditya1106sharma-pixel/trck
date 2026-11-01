@@ -231,3 +231,4 @@ pre.prompt{white-space:pre-wrap;font:13px/1.5 var(--body);background:var(--raise
 .chip.sore[aria-pressed=true]{font-weight:600}
 .meas p{margin-top:4px}
 .trainer textarea{min-height:88px}
+.chip.sore{min-height:44px}

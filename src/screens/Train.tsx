@@ -55,7 +55,7 @@ export function Train({ store, sel, today, toast }: ScreenProps) {
         }} />
       )}
 
-      <Trainer store={store} sel={sel} toast={toast} />
+      <Trainer store={store} sel={sel} today={today} toast={toast} />
 
       {planned.length > 0 && (
         <section>

@@ -20,12 +20,13 @@ export function BodyLog({ store, sel, today }: { store: Store; sel: string; toda
     if (Object.keys(cur).length) x.sore = cur; else delete x.sore
   })
   const setMeas = (key: MeasKey, raw: string) => mutate(sel, (x) => {
-    const n = raw === '' ? null : Number(raw)
+    const num = raw === '' ? null : Number(raw)
+    const n = num != null && Number.isFinite(num) && num > 0 ? num : null
     if (key === 'wt') x.wt = n
     else if (key === 'waist') x.waist = n
     else {
       const cur = { ...x.meas }
-      if (n == null || !(n > 0)) delete cur[key]; else cur[key] = n
+      if (n == null) delete cur[key]; else cur[key] = n
       if (Object.keys(cur).length) x.meas = cur; else delete x.meas
     }
   })

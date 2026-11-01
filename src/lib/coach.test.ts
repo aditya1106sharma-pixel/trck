@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addSets, claudePrompt, demoLink, ensureLift, findLift, parseCoachReply, type Card } from './coach'
+import { addSets, claudePrompt, demoLink, ensureLift, findLift, parseCoachReply, readCard, type Card } from './coach'
 import { buildContext, measDue, measOf, measTrend } from './context'
 import { atHour } from './dates'
 import { hoursLeft, soreLeft } from './muscles'
@@ -233,5 +233,44 @@ describe('stored fields added in 0.7.0', () => {
     expect(again.days['2026-11-01'].sore).toEqual({ quads: 3 })
     expect(again.days['2026-11-01'].meas).toEqual({ thigh: 55 })
     expect(again.settings.measDays).toBe(21)
+  })
+})
+
+describe('review fixes in 0.7.0', () => {
+  it('a bare Row, Curl or Press never matches a lift, so sets are not logged under the wrong one', () => {
+    expect(findLift('Row', S)).toBeNull()
+    expect(findLift('Curl', S)).toBeNull()
+    expect(findLift('Press', S)).toBeNull()
+    expect(findLift('Leg', S)).toBeNull()
+  })
+  it('a longer name that holds one lift as whole words still finds it, but not when two lifts could match', () => {
+    expect(findLift('Seated cable row machine', S)?.id).toBe('row')
+    expect(findLift('Incline dumbbell press', S)?.id).toBe('c_incline')
+    const twin: Settings = { ...S, extra: [{ id: 'x_wide', n: 'Wide chest press', m: { chest: 1 }, s: 3, lo: 8, hi: 12, inc: 2.5, x: true }] }
+    expect(findLift('Wide chest press machine', twin)).toBeNull() // Chest press and Wide chest press are both held, so neither is guessed
+    expect(findLift('Wide chest press', twin)?.id).toBe('x_wide') // an exact name always wins
+  })
+  it('reads one card the same way as a whole reply, so a damaged saved thread is cleaned', () => {
+    expect(readCard({ type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }] })).toMatchObject({ type: 'log' })
+    expect(readCard({ type: 'log', lift: 'Leg press' })).toBeNull() // no muscles or sets, would have thrown in the screen
+    expect(readCard({ type: 'exercise', name: 'Pec deck' })).toMatchObject({ cues: [], muscles: [] })
+    expect(readCard(null)).toBeNull()
+    expect(readCard('x')).toBeNull()
+  })
+  it('prototype keys in a reply do nothing', () => {
+    const c = cards('{"cards":[{"type":"advice","title":"Hi","body":"Body","__proto__":{"polluted":true},"constructor":{"x":1}}]}')
+    expect(c).toHaveLength(1)
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+  })
+  it('a huge paste is cut before it is read, and still shows as a note', () => {
+    const p = parseCoachReply('x'.repeat(500_000))
+    expect(p.ok && p.cards[0].type === 'note' && p.cards[0].text.length <= 1200).toBe(true)
+  })
+  it('fractional soreness levels and the wrong kind of value are dropped', () => {
+    expect(normDay({ sore: { back: 2.5 } }).sore).toBeUndefined()
+    expect(normDay({ sore: { back: 2.5, chest: 2 } }).sore).toEqual({ chest: 2 })
+  })
+  it('a sore, never trained muscle says Recovering, not Not trained yet (the hours are positive)', () => {
+    expect(hoursLeft({ '2026-11-01': day({ sore: { calves: 2 } }) }, S, 'calves', NOW)).toBeGreaterThan(0)
   })
 })

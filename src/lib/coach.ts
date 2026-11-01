@@ -37,7 +37,7 @@ function extract(raw: string): unknown {
   return JSON.parse(body.slice(a, b + 1))
 }
 
-function readCard(c: unknown): Card | null {
+export function readCard(c: unknown): Card | null {
   if (!c || typeof c !== 'object') return null
   const o = c as Record<string, unknown>
   switch (o.type) {
@@ -81,7 +81,7 @@ function readCard(c: unknown): Card | null {
 
 /** Reads a pasted reply. Plain text becomes one note card. Only an empty paste is refused. */
 export function parseCoachReply(raw: string): Parsed {
-  const trimmed = raw.trim()
+  const trimmed = raw.trim().slice(0, 50_000)
   if (!trimmed) return { ok: false, error: 'Paste the reply first.' }
   let json: unknown
   try { json = extract(trimmed) } catch { return { ok: true, cards: [{ type: 'note', text: trimmed.slice(0, 1200) }], dropped: 0 } }
@@ -96,12 +96,20 @@ export function parseCoachReply(raw: string): Parsed {
 
 const norm = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-/** The lift a name means: one already in the routine or the catalog, else null. Exact match, or one contains the other. */
+/**
+ * The lift a name means: one already in the routine or the catalog, else null. An exact match, or a name that holds the other
+ * as whole words when that one has two or more words ("Incline chest press" holds "Chest press"). A bare "Row" or "Press" matches
+ * nothing, and two possible matches match nothing, so sets are never logged under the wrong lift. A new lift is made instead.
+ */
 export function findLift(name: string, s: Settings): Exercise | null {
   const n = norm(name)
   if (!n) return null
   const all = allExercises(s).concat(CATALOG.filter((c) => !allExercises(s).some((e) => e.id === c.id)))
-  return all.find((e) => norm(e.n) === n) ?? all.find((e) => n.length >= 5 && (norm(e.n).includes(n) || n.includes(norm(e.n)))) ?? null
+  const exact = all.find((e) => norm(e.n) === n)
+  if (exact) return exact
+  const holds = (long: string, short: string) => short.split(' ').length >= 2 && ` ${long} `.includes(` ${short} `)
+  const near = all.filter((e) => { const m = norm(e.n); return holds(n, m) || holds(m, n) })
+  return near.length === 1 ? near[0] : null
 }
 
 /** Makes sure a lift exists and is on, so its sets count towards the muscles. Returns its id. Changes the settings draft. */

@@ -101,7 +101,7 @@ function Detail({ mu, eff, mult, store, rt, onAdd }: { mu: MuscleId | null; eff:
   const lt = lastTrained(data.days, s, mu)
   const lifts = rt.filter((e) => (e.m[mu] ?? 0) > 0)
   const sug = SUGGEST[mu] ? CATALOG.find((c) => c.id === SUGGEST[mu]) : undefined
-  const rec = lt == null ? 'Not trained yet' : hl != null && hl > 0 ? `Recovering, ready in ${Math.ceil(hl)} h` : `Ready. Last trained ${fmt(lt)}`
+  const rec = hl != null && hl > 0 ? `Recovering, ready in ${Math.ceil(hl)} h` : lt == null ? 'Not trained yet' : `Ready. Last trained ${fmt(lt)}`
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
       <div className="row sp"><h3>{muscleLabel(mu)}</h3><span className="sm mut">{rec}</span></div>

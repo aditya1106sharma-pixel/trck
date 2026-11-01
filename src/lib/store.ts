@@ -58,10 +58,10 @@ export function saveBackup(json: string, reason: string, mem: Mem = localStorage
 const MUSCLE_IDS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
 const MEAS_KEYS = ['chest', 'arm', 'thigh', 'hip']
 /** Keeps only known keys with a number inside the allowed range. Anything else in a new optional field is dropped, never crashed on. */
-function cleanLevels(raw: unknown, lo: number, hi: number, keys: string[]): Record<string, number> | undefined {
+function cleanLevels(raw: unknown, lo: number, hi: number, keys: string[], whole = false): Record<string, number> | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const out: Record<string, number> = {}
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (keys.includes(k) && typeof v === 'number' && v >= lo && v <= hi) out[k] = v
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (keys.includes(k) && typeof v === 'number' && v >= lo && v <= hi && (!whole || Number.isInteger(v))) out[k] = v
   return Object.keys(out).length ? out : undefined
 }
 
@@ -75,7 +75,7 @@ export function normDay(raw: Partial<Day> | undefined): Day {
   d.cig = Number(d.cig) || 0
   d.cardio = Number(d.cardio) || 0
   if (d.plan !== undefined && !(Array.isArray(d.plan) && d.plan.every((x) => typeof x === 'string'))) delete d.plan
-  d.sore = cleanLevels(d.sore, 1, 3, MUSCLE_IDS)
+  d.sore = cleanLevels(d.sore, 1, 3, MUSCLE_IDS, true)
   if (!d.sore) delete d.sore
   d.meas = cleanLevels(d.meas, 20, 250, MEAS_KEYS) as Day['meas']
   if (!d.meas) delete d.meas
