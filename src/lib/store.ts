@@ -144,6 +144,8 @@ export type Store = {
   setSettings: (fn: (s: Settings) => void) => void
   /** Pass `backup` to snapshot what is on the device first, as an import does. Returns false, and changes nothing, if that copy cannot be kept. */
   replace: (d: AppData, backup?: boolean) => boolean
+  /** Changes the latest data, not the data from the last render, so a sync or an edit in between is never overwritten. */
+  apply: (fn: (d: AppData) => AppData) => void
   saveError: boolean
 }
 
@@ -189,7 +191,9 @@ export function useStore(): Store {
     return true
   }, [])
 
-  return { data, locked: boot.locked, mutate, setSettings, replace, saveError }
+  const apply = useCallback((fn: (d: AppData) => AppData) => { setData((prev) => fn(prev)) }, [])
+
+  return { data, locked: boot.locked, mutate, setSettings, replace, apply, saveError }
 }
 
 export function exportJson(data: AppData): string {

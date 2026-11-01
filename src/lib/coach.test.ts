@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addSets, applyChanges, claudePrompt, demoLink, describeChange, ensureLift, findLift, history, isChange, parseCoachReply, readCard, resolveDay, type Card, type ChangeCard } from './coach'
+import { absolutize, addSets, applyChanges, claudePrompt, demoLink, describeChange, ensureLift, findLift, history, isChange, parseCoachReply, readCard, resolveDay, type Card, type ChangeCard } from './coach'
 import { buildContext, measDue, measOf, measTrend } from './context'
 import { atHour } from './dates'
 import { hoursLeft, soreLeft } from './muscles'
@@ -367,3 +367,49 @@ describe('the in app trainer: reply text, changes, and agreeing', () => {
 function blankDataFor() {
   return { version: 1, days: {} as Record<string, Day>, settings: structuredClone(S), su: 0 }
 }
+
+describe('review fixes in 0.8.0', () => {
+  const T3 = '2026-11-02'
+  it('an impossible calendar date is refused, so no ghost day is made', () => {
+    expect(resolveDay('2026-02-31', T3, T3)).toBeNull()
+    expect(resolveDay('2026-11-31', T3, T3)).toBeNull()
+    expect(resolveDay('2026-10-31', T3, T3)).toBe('2026-10-31')
+    const r = applyChanges(blankDataFor(), [{ type: 'diary', text: 'x', day: '2026-02-31' }], T3, T3, 5, () => 'x')
+    expect(r).toMatchObject({ applied: 0, skipped: 1 })
+    expect(Object.keys(r.data.days)).toEqual([])
+  })
+  it('today, yesterday and a missing day become real dates when the reply arrives, so waiting changes nothing', () => {
+    const cards: Card[] = [
+      { type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }], day: 'yesterday' },
+      { type: 'soreness', muscle: 'quads', level: 1, note: '' },
+      { type: 'diary', text: 'x', day: '2020-01-01' }, // out of range stays as given, so it is skipped later
+      { type: 'note', text: 'plain' },
+    ]
+    const a = absolutize(cards, T3, '2026-10-30')
+    expect(a.map((c) => (isChange(c) ? c.day : 'n/a'))).toEqual(['2026-11-01', '2026-10-30', '2020-01-01', 'n/a'])
+    // Applied a day later, it still lands on the day it meant.
+    const later = applyChanges(blankDataFor(), a, '2026-11-03', '2026-11-03', 5, () => 'x')
+    expect(Object.keys(later.data.days).sort()).toEqual(['2026-10-30', '2026-11-01'])
+    expect(later.skipped).toBe(1)
+  })
+  it('a measurement replaces that day\'s value, and the list says so before the person agrees', () => {
+    const days = { '2026-11-02': day({ waist: 94, meas: { arm: 30 } }) }
+    const c = (key: 'waist' | 'arm' | 'wt', value: number): ChangeCard => ({ type: 'measure', key, value })
+    expect(describeChange(c('waist', 92), T3, T3, days)).toBe('Change waist from 94 to 92 cm, for today')
+    expect(describeChange(c('arm', 31), T3, T3, days)).toBe('Change arm from 30 to 31 cm, for today')
+    expect(describeChange(c('waist', 94), T3, T3, days)).toBe('Save waist 94 cm, for today') // same value, nothing to warn about
+    expect(describeChange(c('wt', 80), T3, T3, days)).toBe('Save weight 80 kg, for today')
+    const r = applyChanges({ ...blankDataFor(), days }, [c('waist', 92)], T3, T3, 5, () => 'x')
+    expect(r.data.days['2026-11-02'].waist).toBe(92)
+    expect(days['2026-11-02'].waist).toBe(94)
+  })
+  it('the conversation sent on starts with the person and the sides take turns', () => {
+    const h = history([
+      { role: 'coach', text: 'Old answer' }, { role: 'me', text: 'First' }, { role: 'me', text: 'Second, after a failed send' },
+      { role: 'coach', text: 'Answer' }, { role: 'me', text: 'Next' },
+    ])
+    expect(h.map((x) => x.role)).toEqual(['user', 'model', 'user'])
+    expect(h[0].text).toBe('First\nSecond, after a failed send')
+    expect(history([{ role: 'coach', text: 'only a model turn' }])).toEqual([])
+  })
+})

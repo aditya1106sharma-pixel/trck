@@ -23,7 +23,7 @@ Vite + React 18 + TypeScript (strict) + Vitest. No backend of our own, except op
 - Score is 100 points: protein 30, training 20, supplements 20, habits 20, water 10. A streak day is 60 or more. Change a rule and its test together
 - A muscle is trained on a day at 2 or more effective sets (main 1, helper 0.5) and is Ready 48 hours after the usual finish hour. Soreness told to the app (a lot, or sharp) can only delay Ready, never bring it forward: a lot holds a muscle through the next day, sharp through the two days after that
 - Nutrition numbers are rough. Never present them as medical advice. No health claims
-- Free only. Do not add a paid service, a required API key or a server without asking Aditya. The trainer never changes the log without Aditya agreeing to the listed changes first, and only adds, never overwrites or deletes
+- Free only. Do not add a paid service, a required API key or a server without asking Aditya. The trainer never changes the log without Aditya agreeing to the listed changes first, and only adds. The one exception is a measurement, which replaces that day's value and says so in the list first. It never deletes
 - No emoji, no purple gradients, no glass cards, no stock illustrations. Read the design brief before touching CSS
 
 ## Style

@@ -72,13 +72,21 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { return json(400, { error: 'bad-request' }) }
   const today = typeof body.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.today) ? body.today : ''
   const context = typeof body.context === 'string' ? body.context.slice(0, MAX_CONTEXT) : ''
-  const turns = (Array.isArray(body.messages) ? body.messages : []).slice(-10).flatMap((m: unknown) => {
+  const raw = (Array.isArray(body.messages) ? body.messages : []).slice(-10).flatMap((m: unknown) => {
     const o = m as { role?: unknown; text?: unknown }
-    return (o?.role === 'user' || o?.role === 'model') && typeof o.text === 'string' && o.text.trim() ? [{ role: o.role, text: o.text.slice(0, 800) }] : []
+    return (o?.role === 'user' || o?.role === 'model') && typeof o.text === 'string' && o.text.trim() ? [{ role: o.role as 'user' | 'model', text: o.text.slice(0, 800) }] : []
   })
+  // Gemini wants the person first and the sides taking turns, so tidy that here and never spend a message on a 400.
+  while (raw.length && raw[0].role === 'model') raw.shift()
+  const turns = raw.reduce<{ role: 'user' | 'model'; text: string }[]>((out, t) => {
+    const last = out[out.length - 1]
+    if (last && last.role === t.role) last.text = (last.text + '\n' + t.text).slice(0, 1600)
+    else out.push({ ...t })
+    return out
+  }, [])
   if (!today || !turns.length || turns[turns.length - 1].role !== 'user') return json(400, { error: 'bad-request' })
   const image = typeof body.image === 'string' ? body.image : ''
-  if (image && (image.length > MAX_IMAGE_CHARS || !/^[A-Za-z0-9+/=]+$/.test(image.slice(0, 200)))) return json(400, { error: 'bad-image' })
+  if (image && (image.length > MAX_IMAGE_CHARS || !/^[A-Za-z0-9+/=]+$/.test(image))) return json(400, { error: 'bad-image' })
 
   // The daily count, shared with meal photos, kept in the database so it holds across devices.
   const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -113,7 +121,9 @@ Deno.serve(async (req) => {
   const out = await r.json().catch(() => null)
   const text: string = out?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? ''
   try {
-    return json(200, { ...JSON.parse(text), used, cap: CAP })
+    const reply = JSON.parse(text)
+    if (!reply || typeof reply !== 'object' || Array.isArray(reply)) return json(502, { error: 'bad-json' })
+    return json(200, { reply: typeof reply.reply === 'string' ? reply.reply : '', cards: Array.isArray(reply.cards) ? reply.cards : [], used, cap: CAP })
   } catch {
     return json(502, { error: 'bad-json' })
   }

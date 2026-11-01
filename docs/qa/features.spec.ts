@@ -473,3 +473,41 @@ test('signed out, it points to sign in instead of failing quietly', async ({ pag
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByRole('alert')).toContainText('Sign in under Plan')
 })
+
+test('tapping Agree twice saves once, and after a reload the proposal cannot be agreed again', async ({ page }) => {
+  await page.route('**/functions/v1/coach', (r) => r.fulfill({ json: COACH_REPLY }))
+  await chatPage(page)
+  await page.getByLabel('Message').fill('Yesterday I did leg press, 3 sets of 10 at 60')
+  await page.getByRole('button', { name: 'Send' }).click()
+  const agree = page.getByRole('button', { name: 'Agree and apply' })
+  await agree.evaluate((b: HTMLElement) => { b.click(); b.click() }) // two taps in the same instant
+  await expect(page.getByRole('heading', { name: 'Changes saved' })).toBeFocused() // focus moves to the result
+  expect((await stored(page)).days[yesterdayKey()].lift.legpress).toHaveLength(3)
+  // The saved proposal holds real dates, not the words today and yesterday.
+  const thread = await page.evaluate(() => JSON.parse(localStorage.getItem('trck:coach') ?? '[]'))
+  const days = thread.flatMap((m: { cards?: { day?: string }[] }) => (m.cards ?? []).map((c) => c.day)).filter(Boolean)
+  expect(days.every((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))).toBe(true)
+  await page.reload()
+  await tabs(page).getByRole('button', { name: 'Train' }).click()
+  await expect(page.getByRole('heading', { name: 'Changes saved' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Agree and apply' })).toHaveCount(0)
+  expect((await stored(page)).days[yesterdayKey()].lift.legpress).toHaveLength(3)
+})
+
+test('a measurement that would replace one says so, and an unreadable reply is a failure, not a crash', async ({ page }) => {
+  await page.addInitScript(([k]) => { if (!localStorage.getItem('trck:v1')) localStorage.setItem('trck:v1', JSON.stringify({ version: 1, days: { [k]: { waist: 94 } }, settings: { ready: true, start: '2026-10-30' }, su: 1 })) }, [todayKey()] as const)
+  let n = 0
+  await page.route('**/functions/v1/coach', (r) => { n++; return n === 1 ? r.fulfill({ json: { reply: 'Saving your waist.', cards: [{ type: 'measure', key: 'waist', value: 92, day: 'today' }], used: 1, cap: 20 } }) : r.fulfill({ status: 200, body: '[1,2,3]' }) })
+  await signedIn(page)
+  await page.goto('/')
+  await tabs(page).getByRole('button', { name: 'Train' }).click()
+  await page.getByLabel('Message').fill('My waist is 92')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText('Change waist from 94 to 92 cm, for today')).toBeVisible()
+  await page.getByRole('button', { name: 'Agree and apply' }).click()
+  expect((await stored(page)).days[todayKey()].waist).toBe(92)
+  await page.getByLabel('Message').fill('And my arm?')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByRole('alert')).toContainText('could not answer this time')
+  await expect(page.getByLabel('Message')).toHaveValue('And my arm?')
+})

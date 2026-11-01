@@ -127,17 +127,30 @@ export function resolveDay(day: string | undefined, fallback: string, today: str
   if (!day) return fallback
   if (day === 'today') return today
   if (day === 'yesterday') return addDays(today, -1)
-  return day <= today && day >= addDays(today, -30) && !Number.isNaN(Date.parse(day)) ? day : null
+  const real = !Number.isNaN(Date.parse(day)) && new Date(day + 'T00:00:00Z').toISOString().slice(0, 10) === day // 2026-02-31 is not a day
+  return real && day <= today && day >= addDays(today, -30) ? day : null
+}
+
+/** Fixes "today", "yesterday" and a missing day to real dates when the reply arrives, so a proposal left waiting means what it said. */
+export function absolutize(cards: Card[], today: string, fallback: string): Card[] {
+  return cards.map((c) => (isChange(c) ? { ...c, day: resolveDay(c.day, fallback, today) ?? c.day ?? fallback } : c))
 }
 
 const dayWords = (k: string | null, today: string) => (k == null ? 'a date I could not read' : k === today ? 'today' : k === addDays(today, -1) ? 'yesterday' : fmt(k, { weekday: 'short', day: 'numeric', month: 'short' }))
 
 /** One plain line for the "I am making these changes" list. */
-export function describeChange(c: ChangeCard, today: string, fallback = today): string {
-  const when = dayWords(resolveDay(c.day, fallback, today), today)
+export function describeChange(c: ChangeCard, today: string, fallback = today, days?: Record<string, Day>): string {
+  const k = resolveDay(c.day, fallback, today)
+  const when = dayWords(k, today)
   if (c.type === 'log') return `Log ${c.lift}, ${c.sets.map((x) => `${x.w} kg x ${x.r}`).join(', ')}, for ${when}`
   if (c.type === 'soreness') return `Mark ${muscleLabel(c.muscle).toLowerCase()} sore ${['', 'a little', 'a lot', 'sharp'][c.level]}, for ${when}`
-  if (c.type === 'measure') return `Save ${MEASURE[c.key].label} ${c.value} ${MEASURE[c.key].unit}, for ${when}`
+  if (c.type === 'measure') {
+    const d = k ? days?.[k] : undefined
+    const had = d ? (c.key === 'wt' ? d.wt : c.key === 'waist' ? d.waist : d.meas?.[c.key]) : null
+    const u = MEASURE[c.key]
+    // A measurement is one value a day, so a new one replaces the old. The list says so before the person agrees.
+    return typeof had === 'number' && had !== c.value ? `Change ${u.label} from ${had} to ${c.value} ${u.unit}, for ${when}` : `Save ${u.label} ${c.value} ${u.unit}, for ${when}`
+  }
   return `Add a note for ${when}: "${c.text}"`
 }
 
@@ -173,9 +186,16 @@ export function applyChanges(data: AppData, cards: Card[], today: string, fallba
   return { data: next, applied, skipped }
 }
 
-/** The last few turns, as plain text, for the next question. Cards and photos are left out. */
+/** The last few turns, as plain text. Starts with the person, and two turns in a row from the same side become one. */
 export function history(thread: { role: 'me' | 'coach'; text?: string }[], max = 8): { role: 'user' | 'model'; text: string }[] {
-  return thread.filter((m) => (m.text ?? '').trim()).slice(-max).map((m) => ({ role: m.role === 'me' ? 'user' as const : 'model' as const, text: (m.text ?? '').slice(0, 800) }))
+  const turns = thread.filter((m) => (m.text ?? '').trim()).slice(-max).map((m) => ({ role: m.role === 'me' ? 'user' as const : 'model' as const, text: (m.text ?? '').slice(0, 800) }))
+  while (turns.length && turns[0].role === 'model') turns.shift()
+  return turns.reduce<{ role: 'user' | 'model'; text: string }[]>((out, t) => {
+    const last = out[out.length - 1]
+    if (last && last.role === t.role) last.text = (last.text + '\n' + t.text).slice(0, 800)
+    else out.push({ ...t })
+    return out
+  }, [])
 }
 
 /** What went wrong asking the trainer, in words that lead to the Claude app instead of a dead end. */

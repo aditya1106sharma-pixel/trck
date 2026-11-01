@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  applyChanges, claudePrompt, COACH_FAILURE, demoLink, describeChange, ensureLift, history, isChange, parseCoachReply, readCard,
+  absolutize, applyChanges, claudePrompt, COACH_FAILURE, demoLink, describeChange, ensureLift, history, isChange, parseCoachReply, readCard,
   type Card, type ChangeCard,
 } from '../lib/coach'
 import { buildContext } from '../lib/context'
@@ -9,6 +9,7 @@ import { askCoach } from '../lib/sync'
 import type { Store } from '../lib/store'
 import { uid } from '../screens/common'
 import { shrink } from './shrink'
+import type { Day } from '../lib/types'
 
 type Stored = Card & { done?: boolean }
 type Msg = { id: string; role: 'me' | 'coach'; text?: string; attached?: string; cards?: Stored[]; via?: 'app' | 'paste'; applied?: 'yes' | 'skip' }
@@ -47,7 +48,7 @@ function readUsed(day: string): { n: number; cap: number } | null {
 }
 
 export function Trainer({ store, sel, today, toast }: { store: Store; sel: string; today: string; toast: (m: string) => void }) {
-  const { data, setSettings, replace } = store
+  const { data, setSettings, apply } = store
   const s = data.settings
   const [thread, setThread] = useState<Msg[]>(readThread)
   const [q, setQ] = useState('')
@@ -61,7 +62,9 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
   const [used, setUsed] = useState(() => readUsed(today))
   const rec = useRef<Rec | null>(null)
   const busy = useRef(new Set<string>()) // a button tapped twice must act once
-  useEffect(() => () => { rec.current?.stop() }, []) // leaving the tab ends the mic
+  const alive = useRef(true)
+  const [said, setSaid] = useState('')
+  useEffect(() => () => { alive.current = false; rec.current?.stop() }, []) // leaving the tab ends the mic
 
   const push = (fn: (t: Msg[]) => Msg[]) => setThread((t) => { const n = fn(t).slice(-MAX_MSGS); writeThread(n); return n })
   const context = () => buildContext(data.days, s, today, Date.now())
@@ -80,6 +83,10 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
     image = undefined
     setThinking(false)
     if (!res.ok) { setFail(COACH_FAILURE[res.why] ?? COACH_FAILURE.failed); return }
+    // The function always answers with a JSON object. Anything else is a failure, not a note.
+    let shape: unknown = null
+    try { shape = JSON.parse(res.text) } catch { /* handled below */ }
+    if (!shape || typeof shape !== 'object' || Array.isArray(shape)) { setFail(COACH_FAILURE.failed); return }
     const p = parseCoachReply(res.text)
     if (!p.ok || (!p.text && !p.cards.length)) { setFail(COACH_FAILURE.failed); return }
     try {
@@ -90,27 +97,31 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
         try { localStorage.setItem(USED, JSON.stringify({ day: today, ...u })) } catch { /* ignore */ }
       }
     } catch { /* the count is a convenience */ }
-    push((t) => [...t, { id: uid(), role: 'me', text: question || 'A photo', attached: photo?.name }, { id: uid(), role: 'coach', via: 'app', text: p.text, cards: p.cards }])
+    const fresh: Msg[] = [{ id: uid(), role: 'me', text: question || 'A photo', attached: photo?.name }, { id: uid(), role: 'coach', via: 'app', text: p.text, cards: absolutize(p.cards, today, sel) }]
+    // The person may have left the tab while it thought. The answer is saved either way.
+    if (alive.current) { push((t) => [...t, ...fresh]); setSaid('The trainer replied.') } else writeThread([...readThread(), ...fresh].slice(-MAX_MSGS))
     if (p.dropped > 0) toast(`${p.dropped} part${p.dropped === 1 ? '' : 's'} of the reply could not be read and were left out.`)
-    setQ(''); setPhoto(null)
+    if (alive.current) { setQ(''); setPhoto(null) }
   }
 
   // Changes the person agreed to. Added to the log, never overwriting it.
   const run = (lock: string, cards: Card[]): { applied: number; skipped: number } | null => {
     if (busy.current.has(lock)) return null
     busy.current.add(lock)
-    const r = applyChanges(data, cards, today, sel, Date.now(), () => 'x_' + uid())
-    if (r.applied) replace(r.data)
-    return { applied: r.applied, skipped: r.skipped }
+    const count = applyChanges(data, cards, today, sel, Date.now(), () => 'x_' + uid())
+    if (count.applied) apply((prev) => applyChanges(prev, cards, today, sel, Date.now(), () => 'x_' + uid()).data)
+    return { applied: count.applied, skipped: count.skipped }
   }
   const approve = (m: Msg) => {
     const changes = (m.cards ?? []).filter(isChange)
     const r = run(m.id, changes)
     if (!r) return
-    push((t) => t.map((x) => (x.id === m.id ? { ...x, applied: 'yes', cards: x.cards?.map((c) => (isChange(c) ? { ...c, done: true } : c)) } : x)))
-    toast(r.skipped ? `${r.applied} saved. ${r.skipped} skipped, the date looked wrong.` : `${r.applied} change${r.applied === 1 ? '' : 's'} saved`)
+    const saved = r.applied > 0
+    push((t) => t.map((x) => (x.id === m.id ? { ...x, applied: saved ? 'yes' : 'skip', cards: x.cards?.map((c) => (isChange(c) ? { ...c, done: true } : c)) } : x)))
+    toast(!saved ? 'Nothing was saved. The dates looked wrong.' : r.skipped ? `${r.applied} saved. ${r.skipped} skipped, the date looked wrong.` : `${r.applied} change${r.applied === 1 ? '' : 's'} saved`)
+    setTimeout(() => document.getElementById(`approve-${m.id}`)?.focus(), 0) // the buttons are gone, so focus moves to the result
   }
-  const skip = (m: Msg) => push((t) => t.map((x) => (x.id === m.id ? { ...x, applied: 'skip' } : x)))
+  const skip = (m: Msg) => { push((t) => t.map((x) => (x.id === m.id ? { ...x, applied: 'skip' } : x))); setTimeout(() => document.getElementById(`approve-${m.id}`)?.focus(), 0) }
 
   // One card from a pasted Claude reply.
   const one = (mid: string, i: number, c: Card) => {
@@ -147,7 +158,7 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
     const p = parseCoachReply(paste)
     if (!p.ok) { setErr(p.error); return }
     setErr('')
-    push((t) => [...t, { id: uid(), role: 'coach', via: 'paste', text: p.text, cards: p.cards }])
+    push((t) => [...t, { id: uid(), role: 'coach', via: 'paste', text: p.text, cards: absolutize(p.cards, today, sel) }])
     if (p.dropped > 0) toast(`${p.dropped} part${p.dropped === 1 ? '' : 's'} of the reply could not be read and were left out.`)
     setPaste('')
   }
@@ -177,12 +188,13 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
         <label className="f" htmlFor="coach-q" style={{ marginTop: 12 }}>Message</label>
         <input id="coach-q" type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Yesterday I did leg press, 3 sets of 10 at 60" />
         <div className="row wrap" style={{ marginTop: 10 }}>
-          <label className="btn ghost filebtn">Photo<input id="coach-photo" type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setPhoto(f); e.target.value = '' }} /></label>
+          <label className="btn ghost filebtn">Photo<input id="coach-photo" type="file" accept="image/*" className="vh" onChange={(e) => { const f = e.target.files?.[0]; if (f) setPhoto(f); e.target.value = '' }} /></label>
           {SpeechCtor() && <button type="button" className="btn ghost" aria-pressed={listening} onClick={voice}>Voice</button>}
           <button type="submit" className="btn acc grow" disabled={thinking || (!q.trim() && !photo)}>{thinking ? 'Thinking' : 'Send'}</button>
         </div>
       </form>
       {photo && <p className="sm" style={{ marginTop: 8 }}>Photo ready: {photo.name} <button className="linkbtn" onClick={() => setPhoto(null)}>Remove</button></p>}
+      <p className="vh" role="status" aria-live="polite">{said}</p>
       {fail && (
         <div role="alert" className="failbox">
           <p className="sm">{fail}</p>
@@ -191,11 +203,11 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
       )}
 
       {thread.length > 0 && (
-        <div className="thread" role="log" aria-live="polite">
+        <div className="thread">
           {thread.map((m) => m.role === 'me' ? (
             <div className="msg me" key={m.id}><p>{m.text}</p>{m.attached && <p className="sm mut">With {m.attached}</p>}</div>
           ) : (
-            <Coach key={m.id} m={m} today={today} sel={sel} onApprove={() => approve(m)} onSkip={() => skip(m)} onOne={(i, c) => one(m.id, i, c)} />
+            <Coach key={m.id} m={m} today={today} sel={sel} days={data.days} onApprove={() => approve(m)} onSkip={() => skip(m)} onOne={(i, c) => one(m.id, i, c)} />
           ))}
           <button className="linkbtn" onClick={() => { setThread([]); writeThread([]) }}>Clear the conversation</button>
         </div>
@@ -207,7 +219,7 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
         <summary>Use the Claude app instead</summary>
         <p className="sm mut">For a clip, or when the free messages run out. Your week and question are copied, and your photo or clip goes to Claude through the share sheet. Paste its reply below.</p>
         <div className="row wrap" style={{ margin: '10px 0' }}>
-          <label className="btn ghost filebtn">Clip<input type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) setFiles((a) => [...a, f].slice(-3)); e.target.value = '' }} /></label>
+          <label className="btn ghost filebtn">Clip<input type="file" accept="video/*" className="vh" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFiles((a) => [...a, f].slice(-3)); e.target.value = '' }} /></label>
           <button className="btn ghost" disabled={!q.trim() && !photo && !files.length} onClick={viaClaude}>Send to the Claude app</button>
           <button className="linkbtn" onClick={() => void copy(context(), 'Your week is copied')}>Copy my week</button>
         </div>
@@ -222,7 +234,7 @@ export function Trainer({ store, sel, today, toast }: { store: Store; sel: strin
   )
 }
 
-function Coach({ m, today, sel, onApprove, onSkip, onOne }: { m: Msg; today: string; sel: string; onApprove: () => void; onSkip: () => void; onOne: (i: number, c: Card) => void }) {
+function Coach({ m, today, sel, days, onApprove, onSkip, onOne }: { m: Msg; today: string; sel: string; days: Record<string, Day>; onApprove: () => void; onSkip: () => void; onOne: (i: number, c: Card) => void }) {
   const cards = m.cards ?? []
   const inApp = m.via === 'app'
   const changes = cards.filter(isChange) as ChangeCard[]
@@ -233,8 +245,8 @@ function Coach({ m, today, sel, onApprove, onSkip, onOne }: { m: Msg; today: str
       {cards.map((c, i) => (inApp && isChange(c)) ? null : <CardView key={i} c={c} onAct={() => onOne(i, c)} />)}
       {inApp && changes.length > 0 && (
         <div className="coachcard approve">
-          <h3>{m.applied === 'yes' ? 'Changes saved' : m.applied === 'skip' ? 'Changes skipped' : `I want to make ${changes.length} change${changes.length === 1 ? '' : 's'}`}</h3>
-          <ul className="plain">{changes.map((c, i) => <li key={i}>{describeChange(c, today, sel)}</li>)}</ul>
+          <h3 id={`approve-${m.id}`} tabIndex={-1}>{m.applied === 'yes' ? 'Changes saved' : m.applied === 'skip' ? 'Changes skipped' : `I want to make ${changes.length} change${changes.length === 1 ? '' : 's'}`}</h3>
+          <ul className="plain">{changes.map((c, i) => <li key={i}>{describeChange(c, today, sel, days)}</li>)}</ul>
           {sharp && <p className="sm warn">Sharp pain, swelling or pain that does not ease: stop and see a doctor.</p>}
           {!m.applied && (
             <>
