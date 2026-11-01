@@ -218,3 +218,100 @@ test('after sign in with an empty account the screen holds still and sync does n
   expect(reads).toBeLessThanOrEqual(3) // one sync, maybe one more after the first save, never one every 1.5 seconds
   await expect(page.getByText(/Signed in as e2e@example.com/)).toBeVisible() // the Set up screen says who is signed in
 })
+
+// 0.7.0: the trainer. Claude's reply is pasted in, so there is nothing to mock on the network.
+const todayKey = () => key(new Date(Date.now() - 5 * 36e5))
+async function trainFor(page: Page, days: Record<string, unknown> = {}) {
+  await page.addInitScript(([d]) => { if (!localStorage.getItem('trck:v1')) localStorage.setItem('trck:v1', JSON.stringify({ version: 1, days: d, settings: { ready: true, start: '2026-10-30' }, su: 1 })) }, [days] as const)
+  await page.goto('/')
+  await tabs(page).getByRole('button', { name: 'Train' }).click()
+}
+const stored = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('trck:v1') ?? '{}'))
+
+test('ask the trainer, paste the reply, and log only when you tap Log', async ({ page }) => {
+  const y = new Date(Date.now() - 5 * 36e5); y.setDate(y.getDate() - 1)
+  const sets = (n: number) => Array.from({ length: n }, () => ({ w: 30, r: 10 }))
+  await trainFor(page, { [key(y)]: { lift: { chest: sets(3), pulldown: sets(3), row: sets(3) } } })
+  await expect(page.getByRole('heading', { name: 'Trainer' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ask Claude' })).toBeDisabled()
+  await page.getByLabel('Your question').fill('Pec deck, new to me. Fit tonight?')
+  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'pecdeck.png', mimeType: 'image/png', buffer: PNG })
+  await expect(page.getByText(/Ready to send: pecdeck.png/)).toBeVisible()
+  await page.getByRole('button', { name: 'Ask Claude' }).click()
+  await expect(page.getByText('Pec deck, new to me. Fit tonight?')).toBeVisible()
+  await expect(page.getByText('With pecdeck.png')).toBeVisible()
+  expect(JSON.stringify(await page.evaluate(() => Object.entries(localStorage)))).not.toContain('iVBOR') // the photo is kept nowhere
+
+  const reply = { cards: [
+    { type: 'exercise', name: 'Pec deck', muscles: ['chest', 'shoulders'], summary: 'A chest fly machine. Chest is ready tonight.', cues: ['Seat at mid chest', 'Squeeze in front'], safety: 'Start light.' },
+    { type: 'advice', title: 'Rest your back', body: 'You did 6 sets of back yesterday.', action: 'rest', muscles: ['back'] },
+    { type: 'log', lift: 'Pec deck', muscles: ['chest'], sets: [{ w: 20, r: 12 }, { w: 20, r: 12 }, { w: 9999, r: 12 }] },
+    { type: 'soreness', muscle: 'back', level: 1, note: 'A little.' },
+  ] }
+  await page.getByLabel("Claude's reply").fill('Sure:\n```json\n' + JSON.stringify(reply) + '\n```')
+  await page.getByRole('button', { name: 'Read the reply' }).click()
+  await expect(page.getByRole('heading', { name: 'Pec deck', level: 3 }).first()).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Watch a demo' })).toHaveAttribute('href', /youtube\.com\/results\?search_query=Pec%20deck%20form/)
+  await expect(page.getByText('20 kg x 12, 20 kg x 12')).toBeVisible() // the 9999 kg set was dropped
+  expect(JSON.stringify((await stored(page)).days)).not.toContain('"pecdeck"') // nothing logged yet
+  expect(Object.values((await stored(page)).days as Record<string, { lift?: Record<string, unknown[]> }>).some((d) => Object.keys(d.lift ?? {}).some((k) => k.startsWith('x_')))).toBe(false)
+  expect(await sideways(page)).toBe(false)
+  await page.screenshot({ path: `test-results/trainer-${test.info().project.name}.png`, fullPage: true })
+
+  await page.getByRole('button', { name: 'Log 2 sets' }).click()
+  await expect(page.getByRole('button', { name: 'Logged' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Save soreness' }).click()
+  const data = await stored(page)
+  const t = data.days[todayKey()]
+  const id = Object.keys(t.lift).find((k) => k.startsWith('x_'))!
+  expect(t.lift[id]).toEqual([{ w: 20, r: 12 }, { w: 20, r: 12 }])
+  expect(data.settings.extra.find((e: { id: string }) => e.id === id)).toMatchObject({ n: 'Pec deck', m: { chest: 1 } })
+  expect(t.sore).toEqual({ back: 1 })
+  await expect(page.getByRole('heading', { name: 'Pec deck', level: 3 }).last()).toBeVisible() // the new lift is in the list, with its sets
+  await page.reload()
+  await tabs(page).getByRole('button', { name: 'Train' }).click()
+  await expect(page.getByText('Pec deck, new to me. Fit tonight?')).toBeVisible() // the thread survives a reload
+})
+
+test('a plain text reply still shows, and an unusable one says so', async ({ page }) => {
+  await trainFor(page)
+  await page.getByLabel("Claude's reply").fill('Your chest is ready. Try 2 light sets of pec deck.')
+  await page.getByRole('button', { name: 'Read the reply' }).click()
+  await expect(page.getByText('Your chest is ready. Try 2 light sets of pec deck.')).toBeVisible()
+  await page.getByLabel("Claude's reply").fill('{"cards":[{"type":"video"},{"type":"log","lift":"x","muscles":[],"sets":[]}]}')
+  await page.getByRole('button', { name: 'Read the reply' }).click()
+  await expect(page.getByRole('alert')).toContainText('Nothing in that reply looked right')
+})
+
+test('soreness keeps a muscle out of tonight, and measurements save with a due date', async ({ page }) => {
+  await trainFor(page)
+  await tabs(page).getByRole('button', { name: 'Body' }).click()
+  await expect(page.getByRole('heading', { name: 'Sore anywhere?' })).toBeVisible()
+  const chest = page.getByRole('button', { name: /^Chest, not sore/ })
+  await chest.click()
+  await expect(page.getByRole('button', { name: /^Chest, sore a little/ })).toBeVisible()
+  await page.getByRole('button', { name: /^Chest, sore a little/ }).click()
+  await expect(page.getByRole('button', { name: /^Chest, sore a lot/ })).toBeVisible()
+  await page.getByRole('button', { name: /^Chest, sore a lot/ }).click()
+  await expect(page.getByRole('alert')).toContainText('see a doctor') // sharp
+  await page.getByRole('button', { name: /^Chest, sore sharp/ }).click()
+  await expect(page.getByRole('button', { name: /^Chest, not sore/ })).toBeVisible()
+  await page.getByRole('button', { name: /^Chest, not sore/ }).click()
+  await page.getByRole('button', { name: /^Chest, sore a little/ }).click() // a lot
+  const d = (await stored(page)).days[todayKey()]
+  expect(d.sore).toEqual({ chest: 2 })
+
+  await page.getByLabel('Waist cm').fill('92.5')
+  await page.getByLabel('Arm cm').fill('31')
+  await expect(page.getByText(/Next in 14 days/)).toBeVisible()
+  const m = (await stored(page)).days[todayKey()]
+  expect(m.waist).toBe(92.5)
+  expect(m.meas).toEqual({ arm: 31 })
+  expect(await sideways(page)).toBe(false)
+  await page.screenshot({ path: `test-results/body-${test.info().project.name}.png`, fullPage: true })
+
+  await tabs(page).getByRole('button', { name: 'Train' }).click()
+  const card = page.locator('section').filter({ has: page.getByRole('heading', { name: "Today's session" }) })
+  await expect(card.getByText(/Chest/).first()).toBeVisible()
+  await expect(card.getByText('Chest press', { exact: true })).toHaveCount(0) // sore a lot: out of tonight's plan
+})

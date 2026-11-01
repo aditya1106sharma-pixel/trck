@@ -5,6 +5,7 @@ import { planSession, swapLift, toAdd, trainedToday, type SessionPlan } from '..
 import { sessionsInWeek } from '../lib/score'
 import { blankDay, type Exercise, type MuscleId, type Settings } from '../lib/types'
 import { Section, r1 } from '../ui/bits'
+import { Trainer } from '../ui/Trainer'
 import { uid, type ScreenProps } from './common'
 
 /** Add a catalog lift to the routine, or bring it back if it was removed. */
@@ -18,7 +19,7 @@ function addCatalog(x: Settings, id: string) {
 
 const imgSearch = (n: string) => `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(n + ' exercise form')}`
 
-export function Train({ store, sel, today }: ScreenProps) {
+export function Train({ store, sel, today, toast }: ScreenProps) {
   const { data, mutate, setSettings } = store
   const s = data.settings
   const d = data.days[sel] ?? blankDay()
@@ -53,6 +54,8 @@ export function Train({ store, sel, today }: ScreenProps) {
           setShowAll(false)
         }} />
       )}
+
+      <Trainer store={store} sel={sel} toast={toast} />
 
       {planned.length > 0 && (
         <section>

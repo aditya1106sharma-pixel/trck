@@ -1,6 +1,6 @@
 # PRD: AI trainer in Train, and the app revamp
 
-**Status: Draft.** Waiting for Aditya to pick a design direction and the first slice. Not approved to build.
+**Status: Approved for slices 1 and 2** (Aditya, 2026-11-01): direction B Trainer, first release is slices 1 and 2, free only with the Claude fallback. Slices 3 to 5 are not approved yet. The in app `coach` function (slice 4) needs a separate go ahead.
 Research: [ai-trainer-revamp.md](../research/ai-trainer-revamp.md). Designs: see the prototype link in the reply that delivered this.
 
 ## 1. Summary

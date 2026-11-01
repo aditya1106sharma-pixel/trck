@@ -1,5 +1,5 @@
 import { CATALOG, ROUTINE, TARGET } from './catalog'
-import { addDays, atHour, winKeys, weekStart } from './dates'
+import { addDays, atHour, ROLLOVER_HOURS, winKeys, weekStart } from './dates'
 import type { Days } from './score'
 import type { Exercise, MuscleId, Settings, SetLog } from './types'
 
@@ -55,11 +55,29 @@ export function lastTrained(days: Days, s: Settings, mu: MuscleId): string | nul
   return null
 }
 
-/** Hours until the muscle has had 48 hours since the usual finish hour. Null if never trained. */
+/**
+ * Hours until soreness stops holding a muscle back, or null when nothing is holding it.
+ * Sore "a lot" holds it through the next day, "sharp" through the day after. "A little" never holds it.
+ */
+export function soreLeft(days: Days, mu: MuscleId, now: number = Date.now()): number | null {
+  let until = -Infinity
+  for (const [k, d] of Object.entries(days)) {
+    const level = d.sore?.[mu] ?? 0
+    if (level >= 2) until = Math.max(until, atHour(addDays(k, level), ROLLOVER_HOURS))
+  }
+  return until === -Infinity ? null : (until - now) / 36e5
+}
+
+/**
+ * Hours until the muscle is Ready: 48 hours since the usual finish hour on the last day it got 2 or more sets.
+ * Soreness can only make it wait longer, never shorter. Null if never trained and not sore.
+ */
 export function hoursLeft(days: Days, s: Settings, mu: MuscleId, now: number = Date.now()): number | null {
   const k = lastTrained(days, s, mu)
-  if (!k) return null
-  return (atHour(k, s.hour) + 48 * 36e5 - now) / 36e5
+  const base = k ? (atHour(k, s.hour) + 48 * 36e5 - now) / 36e5 : null
+  const sore = soreLeft(days, mu, now)
+  if (sore == null || sore <= 0) return base
+  return base == null ? sore : Math.max(base, sore)
 }
 
 export type Band = 'low' | 'ok' | 'high' | 'ind'

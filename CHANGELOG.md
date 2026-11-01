@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 - 2026-11-01
+- Train has a Trainer. Type a question, or add a photo or a clip of a machine or a lift, and tap Ask Claude. Your week goes with it: what you lifted, what is ready, what is sore, your measurements. The photo or clip goes to Claude through your phone's share sheet, not to TRCK.
+- Paste Claude's reply back and it turns into cards: an exercise with cues and a demo link, advice to rest, swap or push, soreness to save, and sets to log. Nothing is logged until you tap Log. A reply that is plain text still shows.
+- Muscles is now Body. Tap a muscle to say it is sore: a little, a lot, or sharp. A lot keeps it out of tonight's session through tomorrow. Sharp keeps it out two more days and says to see a doctor if it does not ease. Soreness can only make a muscle wait longer.
+- Body also has measurements: weight, waist, chest, arm, thigh and hip, with how much each has changed since the first entry, and a reminder every 14 days (you can change that).
+- Copy my week gives the same summary to paste into any chat.
+- No new service and nothing new to switch on. The in app coach, set by set logging and the full redesign come in later releases.
+
 ## 0.6.3 - 2026-10-31
 - Fixes the screen flickering after you sign in. TRCK was syncing again and again, about every 1.5 seconds, and on an account with nothing saved yet that made it flip between the Set up and Today screens. It now syncs once, then only when you change something or come back to the app.
 - The Set up screen now says who you are signed in as, and that this account has no saved log yet, instead of asking you to sign in again.

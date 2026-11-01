@@ -3,7 +3,7 @@ import { CATALOG, LIFT_EQ, MUSCLES, SUGGEST, TARGET, muscleLabel } from './catal
 import { addDays } from './dates'
 import { allExercises, dayEffective, hoursLeft, overloadHint, prevSession, routine, validSets, weekEffective, type Effective } from './muscles'
 import type { Days } from './score'
-import type { Exercise, MuscleId, Settings } from './types'
+import { blankDay, type Exercise, type MuscleId, type Settings } from './types'
 
 export const MIN_PER_SET = 3
 export const MAX_MIN = 50
@@ -111,6 +111,8 @@ function ranked(ctx: Ctx, mu: MuscleId, used: Set<string>, first = false): Exerc
 export function planSession(days: Days, s: Settings, today: string, now: number): SessionPlan {
   // Only days before today, so the plan stays put while tonight's sets are logged.
   const past: Days = Object.fromEntries(Object.entries(days).filter(([k]) => k < today))
+  // Soreness told today counts at once, even though tonight's sets do not.
+  if (days[today]?.sore) past[today] = { ...blankDay(), sore: days[today].sore }
   const left = new Map<MuscleId, number | null>(MUSCLES.map((m) => [m.id, hoursLeft(past, s, m.id, now)]))
   const ready = (mu: MuscleId) => { const h = left.get(mu); return h == null || h <= 0 }
   const rtIds = new Set(routine(s).map((e) => e.id))

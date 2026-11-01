@@ -211,3 +211,23 @@ pre.prompt{white-space:pre-wrap;font:13px/1.5 var(--body);background:var(--raise
 .photo .tick{margin:12px 0 0;min-height:44px}
 .photo .tick input{width:22px;height:22px;accent-color:var(--acc);margin:0}
 .photo .steps{margin:8px 0 0}
+
+/* trainer and body log */
+.filebtn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.grow{flex:1 1 140px}
+.trainer .thread{margin-top:14px;display:grid;gap:4px}
+.trainer .msg{padding:10px 0}
+.trainer .msg.me{margin-left:auto;max-width:88%;text-align:right;border-right:3px solid var(--acc);padding-right:10px}
+.trainer .msg.coach{display:grid;gap:12px}
+.coachcard{border-left:3px solid var(--ink);padding-left:12px;display:grid;gap:6px}
+.coachcard h3{font-size:20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.coachcard .tag{font:600 12px var(--body);text-transform:none;letter-spacing:0;color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+.coachcard ol{margin:0;padding-left:20px;color:var(--mut)}
+.coachcard a.btn{display:inline-flex;align-items:center;text-decoration:none}
+.coachcard .row{margin-top:4px}
+.chip.sore small{margin-left:6px}
+.chip.sore[data-level="1"]{border-color:var(--warn)}
+.chip.sore[data-level="2"],.chip.sore[data-level="3"]{border-color:var(--bad);color:var(--bad)}
+.chip.sore[aria-pressed=true]{font-weight:600}
+.meas p{margin-top:4px}
+.trainer textarea{min-height:88px}

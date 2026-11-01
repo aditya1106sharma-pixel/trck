@@ -55,6 +55,16 @@ export function saveBackup(json: string, reason: string, mem: Mem = localStorage
   return false
 }
 
+const MUSCLE_IDS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
+const MEAS_KEYS = ['chest', 'arm', 'thigh', 'hip']
+/** Keeps only known keys with a number inside the allowed range. Anything else in a new optional field is dropped, never crashed on. */
+function cleanLevels(raw: unknown, lo: number, hi: number, keys: string[]): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (keys.includes(k) && typeof v === 'number' && v >= lo && v <= hi) out[k] = v
+  return Object.keys(out).length ? out : undefined
+}
+
 export function normDay(raw: Partial<Day> | undefined): Day {
   const b = blankDay()
   const d = { ...b, ...(raw ?? {}) } as Day
@@ -65,6 +75,10 @@ export function normDay(raw: Partial<Day> | undefined): Day {
   d.cig = Number(d.cig) || 0
   d.cardio = Number(d.cardio) || 0
   if (d.plan !== undefined && !(Array.isArray(d.plan) && d.plan.every((x) => typeof x === 'string'))) delete d.plan
+  d.sore = cleanLevels(d.sore, 1, 3, MUSCLE_IDS)
+  if (!d.sore) delete d.sore
+  d.meas = cleanLevels(d.meas, 20, 250, MEAS_KEYS) as Day['meas']
+  if (!d.meas) delete d.meas
   if (Array.isArray(d.f)) for (const x of d.f) if (x && x.conf !== undefined && !(typeof x.conf === 'number' && x.conf >= 0 && x.conf <= 1)) delete x.conf
   return d
 }
@@ -75,6 +89,7 @@ export function normSettings(raw: Partial<Settings> | undefined): Settings {
   s.foods = Array.isArray(s.foods) ? s.foods : []
   s.meals = Array.isArray(s.meals) ? s.meals : []
   if (s.noEq !== undefined && !Array.isArray(s.noEq)) delete s.noEq
+  if (s.measDays !== undefined && !(typeof s.measDays === 'number' && s.measDays >= 1 && s.measDays <= 90)) delete s.measDays
   return s
 }
 

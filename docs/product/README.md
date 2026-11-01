@@ -11,7 +11,7 @@ How an idea becomes a release in TRCK.
 |---|---|---|---|
 | Photo meal logging | [research](research/photo-meal-logging.md) | [PRD](prds/PRD-photo-meal-logging.md) | Approved, 0.6.0 |
 | Next session suggestion | [research](research/next-session.md) | [PRD](prds/PRD-next-session.md) | Approved, 0.6.0 |
-| AI trainer in Train and the app revamp | [research](research/ai-trainer-revamp.md) | [PRD](prds/PRD-ai-trainer-and-revamp.md) | Draft, waiting for a design pick |
+| AI trainer in Train and the app revamp | [research](research/ai-trainer-revamp.md) | [PRD](prds/PRD-ai-trainer-and-revamp.md) | Approved: slices 1 and 2, direction B, 0.7.0 |
 | Build, borrow or skip, riskiest assumptions | [summary](research/summary.md) | | |
 
 ## Plugins these commands use

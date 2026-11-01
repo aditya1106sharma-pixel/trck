@@ -3,6 +3,7 @@ import { CATALOG, MUSCLES, SUGGEST, TARGET, muscleLabel } from '../lib/catalog'
 import { addDays, fmt, weekStart } from '../lib/dates'
 import { band, gaps, hoursLeft, lastTrained, monthEffective, routine, weekEffective } from '../lib/muscles'
 import type { MuscleId } from '../lib/types'
+import { BodyLog } from '../ui/BodyLog'
 import { BodyMap } from '../ui/BodyMap'
 import { Section, Seg, r1 } from '../ui/bits'
 import type { ScreenProps } from './common'
@@ -38,6 +39,7 @@ export function Muscles({ store, sel, today }: ScreenProps) {
 
   return (
     <>
+      <BodyLog store={store} sel={sel} today={today} />
       <Section title={title} right={<Seg label="Period" value={per} onChange={setPer} opts={[['week', 'Week'], ['month', 'Month']]} />}>
         <div className="row sp" style={{ marginBottom: 8 }}>
           <span className="sm mut">Colour by</span>

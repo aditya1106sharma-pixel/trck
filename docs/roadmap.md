@@ -15,6 +15,11 @@ Today, Train, Muscles, Fuel, Progress, Plan. Local only, backup and restore, ins
 - Next session suggestion (Train) and photo meal logging (Today). PRDs in `docs/product/prds/`, research and the riskiest assumptions in `docs/product/research/`. Photo reading needs `docs/photo-setup.md` done once.
 - Check after 2 weeks: the key results in each PRD. Kill rule in `docs/agent-org-guide.md`, Lesson 5.
 
+## Shipped in 0.7.0
+- Trainer on Train (ask with a photo, clip or text, paste Claude's reply, log from cards), soreness and measurements on Body. PRD in `docs/product/prds/PRD-ai-trainer-and-revamp.md`, slices 1 and 2.
+- Next, not approved yet: slice 3 set by set logging and the navigation revamp (direction B), slice 4 the in app coach (needs a go ahead for a new Edge Function and has a 20 a day free limit), slice 5 body photos on the phone and the recomposition view.
+- Known gap: traps are not a muscle in TRCK yet, so trap work counts under back and shoulders.
+
 ## Before friends sign up: what breaks with many users
 Reviewed from `supabase/schema.sql` and `src/lib/sync.ts`, ordered by risk. Nothing here is fixed yet unless it says so. Supabase limits change, so check their current free tier page before relying on a number.
 

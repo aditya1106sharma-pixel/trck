@@ -11,7 +11,7 @@ Vite + React 18 + TypeScript (strict) + Vitest. No backend of our own, except op
 - Run all of `npm test && npm run build` before saying anything is done
 
 ## Layout
-- `src/lib/` pure logic with no React: score, muscles, plan, photo, fuel, stats, prompt, store, catalog, dates. All rules live here and every rule has a test in `src/lib/*.test.ts`
+- `src/lib/` pure logic with no React: score, muscles, plan, photo, context, coach, fuel, stats, prompt, store, catalog, dates. All rules live here and every rule has a test in `src/lib/*.test.ts`
 - `docs/qa/*.spec.ts` Playwright smoke tests. `npm run test:e2e` builds a copy with a fake Supabase and mocks it
 - `docs/product/` research and PRDs. `supabase/` SQL and the Edge Function
 - `src/screens/` one file per tab. `src/ui/` shared pieces. `src/styles.css` is the whole design system
@@ -21,7 +21,7 @@ Vite + React 18 + TypeScript (strict) + Vitest. No backend of our own, except op
 - Data names in `src/lib/types.ts` match the old prototype export. Never rename a stored field. Add new ones as optional and default them in `normDay`
 - The day rolls over at 5 am, so a 1 am session belongs to the day before. Use `todayKey`, never `new Date()` for day keys
 - Score is 100 points: protein 30, training 20, supplements 20, habits 20, water 10. A streak day is 60 or more. Change a rule and its test together
-- A muscle is trained on a day at 2 or more effective sets (main 1, helper 0.5) and is Ready 48 hours after the usual finish hour
+- A muscle is trained on a day at 2 or more effective sets (main 1, helper 0.5) and is Ready 48 hours after the usual finish hour. Soreness told to the app (a lot, or sharp) can only delay Ready, never bring it forward: a lot holds a muscle through the next day, sharp through the two days after that
 - Nutrition numbers are rough. Never present them as medical advice. No health claims
 - Free only. Do not add a paid service, a required API key or a server without asking Aditya
 - No emoji, no purple gradients, no glass cards, no stock illustrations. Read the design brief before touching CSS
