@@ -3,6 +3,7 @@ import { CATALOG, MUSCLES, SUGGEST, TARGET, muscleLabel } from '../lib/catalog'
 import { addDays, fmt, weekStart } from '../lib/dates'
 import { band, gaps, hoursLeft, lastTrained, monthEffective, routine, weekEffective } from '../lib/muscles'
 import type { MuscleId } from '../lib/types'
+import { BodyLog } from '../ui/BodyLog'
 import { BodyMap } from '../ui/BodyMap'
 import { Section, Seg, r1 } from '../ui/bits'
 import type { ScreenProps } from './common'
@@ -38,6 +39,7 @@ export function Muscles({ store, sel, today }: ScreenProps) {
 
   return (
     <>
+      <BodyLog store={store} sel={sel} today={today} />
       <Section title={title} right={<Seg label="Period" value={per} onChange={setPer} opts={[['week', 'Week'], ['month', 'Month']]} />}>
         <div className="row sp" style={{ marginBottom: 8 }}>
           <span className="sm mut">Colour by</span>
@@ -99,7 +101,7 @@ function Detail({ mu, eff, mult, store, rt, onAdd }: { mu: MuscleId | null; eff:
   const lt = lastTrained(data.days, s, mu)
   const lifts = rt.filter((e) => (e.m[mu] ?? 0) > 0)
   const sug = SUGGEST[mu] ? CATALOG.find((c) => c.id === SUGGEST[mu]) : undefined
-  const rec = lt == null ? 'Not trained yet' : hl != null && hl > 0 ? `Recovering, ready in ${Math.ceil(hl)} h` : `Ready. Last trained ${fmt(lt)}`
+  const rec = hl != null && hl > 0 ? `Recovering, ready in ${Math.ceil(hl)} h` : lt == null ? 'Not trained yet' : `Ready. Last trained ${fmt(lt)}`
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
       <div className="row sp"><h3>{muscleLabel(mu)}</h3><span className="sm mut">{rec}</span></div>

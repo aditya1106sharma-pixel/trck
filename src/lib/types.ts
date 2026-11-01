@@ -48,6 +48,8 @@ export type Day = {
   note: string
   u: number // last edited, ms
   plan?: string[] // lift ids from Start this session, in order (0.6.0)
+  sore?: Partial<Record<MuscleId, number>> // 1 a little, 2 a lot, 3 sharp (0.7.0)
+  meas?: Partial<Record<'chest' | 'arm' | 'thigh' | 'hip', number>> // cm; weight and waist use wt and waist (0.7.0)
 }
 
 export type Food = {
@@ -91,6 +93,7 @@ export type Settings = {
   meals: Meal[]
   ready?: boolean // the first run screen is done
   noEq?: string[] // equipment ids the gym does not have; empty means all on (0.6.0)
+  measDays?: number // days between measurements, default 14 (0.7.0)
 }
 
 /** Bump when a stored field changes shape, and add the step to MIGRATIONS in store.ts. */

@@ -13,7 +13,7 @@ import { Train } from './screens/Train'
 import { useSync } from './lib/sync'
 import { UpdateBar } from './ui/UpdateBar'
 
-const TABS = [['today', 'Today', Today], ['train', 'Train', Train], ['muscles', 'Muscles', Muscles], ['fuel', 'Fuel', Fuel], ['progress', 'Progress', Progress], ['plan', 'Plan', Plan]] as const
+const TABS = [['today', 'Today', Today], ['train', 'Train', Train], ['muscles', 'Body', Muscles], ['fuel', 'Fuel', Fuel], ['progress', 'Progress', Progress], ['plan', 'Plan', Plan]] as const
 type Tab = (typeof TABS)[number][0]
 
 export default function App() {
