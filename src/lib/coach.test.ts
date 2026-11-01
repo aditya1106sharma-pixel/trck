@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addSets, claudePrompt, demoLink, ensureLift, findLift, parseCoachReply, readCard, type Card } from './coach'
+import { absolutize, addSets, applyChanges, claudePrompt, demoLink, describeChange, ensureLift, findLift, history, isChange, parseCoachReply, readCard, resolveDay, type Card, type ChangeCard } from './coach'
 import { buildContext, measDue, measOf, measTrend } from './context'
 import { atHour } from './dates'
 import { hoursLeft, soreLeft } from './muscles'
@@ -272,5 +272,144 @@ describe('review fixes in 0.7.0', () => {
   })
   it('a sore, never trained muscle says Recovering, not Not trained yet (the hours are positive)', () => {
     expect(hoursLeft({ '2026-11-01': day({ sore: { calves: 2 } }) }, S, 'calves', NOW)).toBeGreaterThan(0)
+  })
+})
+
+describe('the in app trainer: reply text, changes, and agreeing', () => {
+  const T2 = '2026-11-02'
+  const reply = JSON.stringify({ reply: 'You did legs yesterday. I will log it, and note the soreness.', cards: [
+    { type: 'log', lift: 'Leg press', muscles: ['quads', 'glutes'], sets: [{ w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 8 }], day: 'yesterday' },
+    { type: 'soreness', muscle: 'quads', level: 2, note: 'a lot', day: 'today' },
+    { type: 'measure', key: 'waist', value: 92.5 },
+    { type: 'diary', text: 'Gym was busy, used the free weights.', day: 'yesterday' },
+    { type: 'advice', title: 'Rest quads', body: 'Two days.', action: 'rest', muscles: ['quads'] },
+  ] })
+  it('reads the reply text and every new card type, with the day each is for', () => {
+    const p = parseCoachReply(reply)
+    expect(p.ok && p.text).toMatch(/You did legs yesterday/)
+    expect(p.ok && p.cards.map((c) => c.type)).toEqual(['log', 'soreness', 'measure', 'diary', 'advice'])
+    expect(p.ok && p.cards.filter(isChange)).toHaveLength(4)
+  })
+  it('shows a reply with text and no cards, and still refuses a reply with neither', () => {
+    const p = parseCoachReply('{"reply":"How many sets, and at what weight?","cards":[]}')
+    expect(p.ok && p.text).toBe('How many sets, and at what weight?')
+    expect(p.ok && p.cards).toEqual([])
+    expect(parseCoachReply('{"reply":"","cards":[{"type":"video"}]}').ok).toBe(false)
+  })
+  it('drops absurd measurements, unknown keys, and notes with no text', () => {
+    const p = parseCoachReply(JSON.stringify({ cards: [
+      { type: 'measure', key: 'wt', value: 5000 }, { type: 'measure', key: 'neck', value: 40 }, { type: 'measure', key: 'waist', value: -3 },
+      { type: 'measure', key: 'arm', value: 31 }, { type: 'diary', text: '   ' }, { type: 'diary', text: 'ok', day: 'next week' },
+    ] }))
+    expect(p.ok && p.cards).toEqual([{ type: 'measure', key: 'arm', value: 31, day: undefined }, { type: 'diary', text: 'ok', day: undefined }])
+  })
+  it('works out the day: today, yesterday, a recent date, and nothing else', () => {
+    expect(resolveDay(undefined, '2026-10-30', T2)).toBe('2026-10-30')
+    expect(resolveDay('today', T2, T2)).toBe(T2)
+    expect(resolveDay('yesterday', T2, T2)).toBe('2026-11-01')
+    expect(resolveDay('2026-10-20', T2, T2)).toBe('2026-10-20')
+    expect(resolveDay('2026-11-09', T2, T2)).toBeNull() // the future
+    expect(resolveDay('2026-09-01', T2, T2)).toBeNull() // more than 30 days back
+    expect(resolveDay('2026-13-45', T2, T2)).toBeNull()
+  })
+  it('says each change in one plain line, naming the day', () => {
+    const c = (parseCoachReply(reply) as { ok: true; cards: Card[] }).cards.filter(isChange) as ChangeCard[]
+    expect(c.map((x) => describeChange(x, T2))).toEqual([
+      'Log Leg press, 60 kg x 10, 60 kg x 10, 60 kg x 8, for yesterday',
+      'Mark quads sore a lot, for today',
+      'Save waist 92.5 cm, for today',
+      'Add a note for yesterday: "Gym was busy, used the free weights."',
+    ])
+  })
+  it('applies agreed changes to the right days without touching anything else, and leaves the input alone', () => {
+    const start = { ...blankDataFor(), days: { '2026-11-01': day({ lift: { legpress: [{ w: 50, r: 10 }] }, note: 'Felt strong.' }) } }
+    const before = JSON.stringify(start)
+    const cards = (parseCoachReply(reply) as { ok: true; cards: Card[] }).cards
+    const r = applyChanges(start, cards, T2, T2, 1_800_000_000_000, () => 'x_new')
+    expect(JSON.stringify(start)).toBe(before) // the old data is untouched
+    expect(r).toMatchObject({ applied: 4, skipped: 0 })
+    const y = r.data.days['2026-11-01']
+    expect(y.lift.legpress).toEqual([{ w: 50, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 8 }]) // added after, never over
+    expect(y.note).toBe('Felt strong.\nGym was busy, used the free weights.')
+    expect(y.u).toBe(1_800_000_000_000)
+    expect(r.data.days[T2].sore).toEqual({ quads: 2 })
+    expect(r.data.days[T2].waist).toBe(92.5)
+    expect(r.data.settings.extra).toEqual([]) // Leg press was already a lift
+  })
+  it('makes a new lift for a new machine, and stamps settings so sync keeps it', () => {
+    const cards: Card[] = [{ type: 'log', lift: 'Pec deck', muscles: ['chest'], sets: [{ w: 20, r: 12 }] }]
+    const r = applyChanges(blankDataFor(), cards, T2, T2, 5, () => 'x_pec')
+    expect(r.data.settings.extra[0]).toMatchObject({ id: 'x_pec', n: 'Pec deck', m: { chest: 1 } })
+    expect(r.data.days[T2].lift.x_pec).toEqual([{ w: 20, r: 12 }])
+    expect(r.data.su).toBe(5)
+  })
+  it('soreness can only go up, and a change dated outside the last 30 days is skipped and counted', () => {
+    const start = { ...blankDataFor(), days: { [T2]: day({ sore: { back: 3 } }) } }
+    const cards: Card[] = [
+      { type: 'soreness', muscle: 'back', level: 1, note: '' },
+      { type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }], day: '2020-01-01' },
+      { type: 'note', text: 'not a change' },
+    ]
+    const r = applyChanges(start, cards, T2, T2, 5, () => 'x')
+    expect(r).toMatchObject({ applied: 1, skipped: 1 })
+    expect(r.data.days[T2].sore).toEqual({ back: 3 })
+    expect(Object.keys(r.data.days)).toEqual([T2])
+  })
+  it('keeps the last 8 turns of the conversation as plain text for the next question', () => {
+    const t = Array.from({ length: 12 }, (_, i) => ({ role: (i % 2 ? 'coach' : 'me') as 'me' | 'coach', text: 'm' + i }))
+    const h = history([...t, { role: 'coach', text: '   ' }])
+    expect(h).toHaveLength(8)
+    expect(h[0]).toEqual({ role: 'user', text: 'm4' })
+    expect(h[7]).toEqual({ role: 'model', text: 'm11' })
+  })
+})
+
+function blankDataFor() {
+  return { version: 1, days: {} as Record<string, Day>, settings: structuredClone(S), su: 0 }
+}
+
+describe('review fixes in 0.8.0', () => {
+  const T3 = '2026-11-02'
+  it('an impossible calendar date is refused, so no ghost day is made', () => {
+    expect(resolveDay('2026-02-31', T3, T3)).toBeNull()
+    expect(resolveDay('2026-11-31', T3, T3)).toBeNull()
+    expect(resolveDay('2026-10-31', T3, T3)).toBe('2026-10-31')
+    const r = applyChanges(blankDataFor(), [{ type: 'diary', text: 'x', day: '2026-02-31' }], T3, T3, 5, () => 'x')
+    expect(r).toMatchObject({ applied: 0, skipped: 1 })
+    expect(Object.keys(r.data.days)).toEqual([])
+  })
+  it('today, yesterday and a missing day become real dates when the reply arrives, so waiting changes nothing', () => {
+    const cards: Card[] = [
+      { type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }], day: 'yesterday' },
+      { type: 'soreness', muscle: 'quads', level: 1, note: '' },
+      { type: 'diary', text: 'x', day: '2020-01-01' }, // out of range stays as given, so it is skipped later
+      { type: 'note', text: 'plain' },
+    ]
+    const a = absolutize(cards, T3, '2026-10-30')
+    expect(a.map((c) => (isChange(c) ? c.day : 'n/a'))).toEqual(['2026-11-01', '2026-10-30', '2020-01-01', 'n/a'])
+    // Applied a day later, it still lands on the day it meant.
+    const later = applyChanges(blankDataFor(), a, '2026-11-03', '2026-11-03', 5, () => 'x')
+    expect(Object.keys(later.data.days).sort()).toEqual(['2026-10-30', '2026-11-01'])
+    expect(later.skipped).toBe(1)
+  })
+  it('a measurement replaces that day\'s value, and the list says so before the person agrees', () => {
+    const days = { '2026-11-02': day({ waist: 94, meas: { arm: 30 } }) }
+    const c = (key: 'waist' | 'arm' | 'wt', value: number): ChangeCard => ({ type: 'measure', key, value })
+    expect(describeChange(c('waist', 92), T3, T3, days)).toBe('Change waist from 94 to 92 cm, for today')
+    expect(describeChange(c('arm', 31), T3, T3, days)).toBe('Change arm from 30 to 31 cm, for today')
+    expect(describeChange(c('waist', 94), T3, T3, days)).toBe('Save waist 94 cm, for today') // same value, nothing to warn about
+    expect(describeChange(c('wt', 80), T3, T3, days)).toBe('Save weight 80 kg, for today')
+    const r = applyChanges({ ...blankDataFor(), days }, [c('waist', 92)], T3, T3, 5, () => 'x')
+    expect(r.data.days['2026-11-02'].waist).toBe(92)
+    expect(days['2026-11-02'].waist).toBe(94)
+  })
+  it('the conversation sent on starts with the person and the sides take turns', () => {
+    const h = history([
+      { role: 'coach', text: 'Old answer' }, { role: 'me', text: 'First' }, { role: 'me', text: 'Second, after a failed send' },
+      { role: 'coach', text: 'Answer' }, { role: 'me', text: 'Next' },
+    ])
+    expect(h.map((x) => x.role)).toEqual(['user', 'model', 'user'])
+    expect(h[0].text).toBe('First\nSecond, after a failed send')
+    expect(history([{ role: 'coach', text: 'only a model turn' }])).toEqual([])
   })
 })

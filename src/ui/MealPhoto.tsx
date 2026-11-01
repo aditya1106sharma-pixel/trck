@@ -1,31 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  applyMine, claudePrompt, defaultName, FAILURE_TEXT, fitSize, mealRange, parseReply, photoEntry,
+  applyMine, claudePrompt, defaultName, FAILURE_TEXT, mealRange, parseReply, photoEntry,
   type Failure, type PhotoPart,
 } from '../lib/photo'
 import { readMealPhoto } from '../lib/sync'
 import type { Food, FoodEntry, Part } from '../lib/types'
 import { Stepper, f0 } from './bits'
+import { shrink } from './shrink'
 
 type Stage =
   | { k: 'start' }
   | { k: 'reading' }
   | { k: 'review'; parts: PhotoPart[]; questions: string[]; fatTsp: number; dropped: string[] }
   | { k: 'fallback'; why: Failure | 'paste' }
-
-/** Draws the photo at most 1024 px on its long side and returns JPEG base64. Nothing is written to storage. */
-async function shrink(file: File): Promise<string> {
-  const bmp = await createImageBitmap(file)
-  const { w, h } = fitSize(bmp.width, bmp.height)
-  const c = document.createElement('canvas')
-  c.width = w
-  c.height = h
-  c.getContext('2d')!.drawImage(bmp, 0, 0, w, h)
-  bmp.close()
-  const url = c.toDataURL('image/jpeg', 0.8)
-  c.width = c.height = 0
-  return url.slice(url.indexOf(',') + 1)
-}
 
 export const PRIVACY_LINE = 'Your photo goes to Google Gemini to be read. On the free plan Google may use it to improve its models, and people at Google may see it. TRCK keeps no copy.'
 

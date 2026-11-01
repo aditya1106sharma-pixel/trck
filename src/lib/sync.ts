@@ -53,6 +53,31 @@ export async function readMealPhoto(image: string, note: string): Promise<PhotoR
   }
 }
 
+export type CoachResult = { ok: true; text: string } | { ok: false; why: Failure }
+
+/** Sends one trainer message with the week and the last few turns. The photo, if any, is not kept anywhere. */
+export async function askCoach(body: { messages: { role: 'user' | 'model'; text: string }[]; context: string; today: string; image?: string }): Promise<CoachResult> {
+  if (!client || !URL || !KEY) return { ok: false, why: 'not-set-up' }
+  if (offline()) return { ok: false, why: 'offline' }
+  const token = (await client.auth.getSession()).data.session?.access_token
+  if (!token) return { ok: false, why: 'signed-out' }
+  try {
+    const r = await fetch(`${URL}/functions/v1/coach`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(40_000),
+    })
+    const text = await r.text()
+    if (r.ok) return { ok: true, text }
+    let parsed: unknown = null
+    try { parsed = JSON.parse(text) } catch { /* not JSON */ }
+    return { ok: false, why: failureOf(r.status, parsed) }
+  } catch {
+    return { ok: false, why: offline() ? 'offline' : 'failed' }
+  }
+}
+
 export type SyncState = 'off' | 'signed-out' | 'syncing' | 'ok' | 'error'
 
 export function useSync(store: Store) {
