@@ -1,6 +1,6 @@
 # PRD: AI trainer in Train, and the app revamp
 
-**Status: Approved for slices 1 and 2** (Aditya, 2026-11-01): direction B Trainer, first release is slices 1 and 2, free only with the Claude fallback. Slices 3 to 5 are not approved yet. The in app `coach` function (slice 4) needs a separate go ahead.
+**Status: Approved for slices 1 and 2** (Aditya, 2026-11-01): direction B Trainer, first release is slices 1 and 2, free only with the Claude fallback. Slice 4 (the in app trainer) approved by Aditya on 2026-11-02 after slice 1 showed that pasting into Claude was the wrong answer: the conversation must happen in the app, on his own Gemini account, with changes proposed and applied only after he agrees. Slices 3 and 5 are not approved yet.
 Research: [ai-trainer-revamp.md](../research/ai-trainer-revamp.md). Designs: see the prototype link in the reply that delivered this.
 
 ## 1. Summary
@@ -43,7 +43,7 @@ Five tabs, each doing one job, instead of six lists:
 2. **Context pack** (`src/lib/context.ts`, pure, tested): last 7 days of sessions, sets per muscle against range, Ready or Recovering with hours left, soreness, latest measurements and trend, protein days hit, supplements, goal. About 300 words. Attached to every question.
 3. **Answers as cards:** exercise card, recommendation card (rest, swap or push, with the reason from the log), log card, note card. Each has a plain one line safety note where relevant. No card says form is right or wrong with certainty.
 4. **Log by saying you did it:** "3 sets of 10 at 40" turns into a log card. Nothing writes until he taps Log.
-5. **Two routes, both free:** in app (Edge Function `coach`, counter of requests left today out of 20) and Copy for Claude with the pack, paste the reply back. When one fails the other is offered with the question kept.
+5. **In app first (0.8.0):** the Edge Function `coach` answers each message with a short reply and cards. Change cards (log, soreness, measurement, note) are shown as one list, "I want to make N changes", and applied only on Agree and apply. The header shows messages used today out of 20. The Claude app route stays for clips and for when the free messages run out, with the question kept.
 6. **Session mode:** one lift at a time, full screen, last time prefilled, big steppers, a rest timer, Swap, Next. Replaces scrolling nine lifts.
 
 ### 6.3 Body

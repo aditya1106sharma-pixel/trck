@@ -1,8 +1,9 @@
 // The trainer's answers as cards. A reply (from Claude, pasted back) is read strictly: bad JSON, unknown muscles and absurd
 // numbers never reach the log. A reply that is not JSON still shows as a note, so the person is never left with nothing.
-import { CATALOG, MUSCLES } from './catalog'
+import { CATALOG, MUSCLES, muscleLabel } from './catalog'
+import { addDays, fmt } from './dates'
 import { allExercises } from './muscles'
-import type { Day, Exercise, MuscleId, Settings } from './types'
+import { blankDay, type AppData, type Day, type Exercise, type MuscleId, type Settings } from './types'
 
 export const MAX_CARDS = 8
 export const MAX_SETS = 10
@@ -13,15 +14,29 @@ export type SetIn = { w: number; r: number }
 export type Card =
   | { type: 'exercise'; name: string; muscles: MuscleId[]; summary: string; cues: string[]; safety: string }
   | { type: 'advice'; title: string; body: string; action: 'rest' | 'swap' | 'push' | 'info'; muscles: MuscleId[] }
-  | { type: 'log'; lift: string; muscles: MuscleId[]; sets: SetIn[] }
-  | { type: 'soreness'; muscle: MuscleId; level: 1 | 2 | 3; note: string }
+  | { type: 'log'; lift: string; muscles: MuscleId[]; sets: SetIn[]; day?: string }
+  | { type: 'soreness'; muscle: MuscleId; level: 1 | 2 | 3; note: string; day?: string }
+  | { type: 'measure'; key: MeasureKey; value: number; day?: string }
+  | { type: 'diary'; text: string; day?: string }
   | { type: 'note'; text: string }
 
-export type Parsed = { ok: true; cards: Card[]; dropped: number } | { ok: false; error: string }
+/** Cards that change the log. Only these wait for the person to agree. */
+export type ChangeCard = Extract<Card, { type: 'log' | 'soreness' | 'measure' | 'diary' }>
+export const isChange = (c: Card): c is ChangeCard => c.type === 'log' || c.type === 'soreness' || c.type === 'measure' || c.type === 'diary'
+
+export type MeasureKey = 'wt' | 'waist' | 'chest' | 'arm' | 'thigh' | 'hip'
+const MEASURE: Record<MeasureKey, { label: string; unit: string; lo: number; hi: number }> = {
+  wt: { label: 'weight', unit: 'kg', lo: 25, hi: 300 }, waist: { label: 'waist', unit: 'cm', lo: 40, hi: 250 },
+  chest: { label: 'chest', unit: 'cm', lo: 40, hi: 250 }, arm: { label: 'arm', unit: 'cm', lo: 10, hi: 100 },
+  thigh: { label: 'thigh', unit: 'cm', lo: 20, hi: 120 }, hip: { label: 'hip', unit: 'cm', lo: 40, hi: 250 },
+}
+
+export type Parsed = { ok: true; cards: Card[]; dropped: number; text?: string } | { ok: false; error: string }
 
 const IDS = new Set<string>(MUSCLES.map((m) => m.id))
 const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '')
 const muscles = (v: unknown): MuscleId[] => (Array.isArray(v) ? v.filter((x): x is MuscleId => typeof x === 'string' && IDS.has(x)).slice(0, 4) : [])
+const dayIn = (v: unknown): string | undefined => (typeof v === 'string' && (v === 'today' || v === 'yesterday' || /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : undefined)
 const num = (v: unknown): number | null => {
   const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
   return typeof n === 'number' && Number.isFinite(n) ? n : null
@@ -63,12 +78,21 @@ export function readCard(c: unknown): Card | null {
         return w != null && r != null && w > 0 && w <= MAX_KG && r >= 1 && r <= MAX_REPS ? [{ w: Math.round(w * 10) / 10, r: Math.round(r) }] : []
       })
       // A log with no lift name, no muscle to count it under, or no believable set is dropped, never guessed.
-      return lift && m.length && sets.length ? { type: 'log', lift, muscles: m, sets } : null
+      return lift && m.length && sets.length ? { type: 'log', lift, muscles: m, sets, day: dayIn(o.day) } : null
     }
     case 'soreness': {
       const muscle = typeof o.muscle === 'string' && IDS.has(o.muscle) ? (o.muscle as MuscleId) : null
       const level = num(o.level)
-      return muscle && (level === 1 || level === 2 || level === 3) ? { type: 'soreness', muscle, level, note: text(o.note, 200) } : null
+      return muscle && (level === 1 || level === 2 || level === 3) ? { type: 'soreness', muscle, level, note: text(o.note, 200), day: dayIn(o.day) } : null
+    }
+    case 'measure': {
+      const key = typeof o.key === 'string' && o.key in MEASURE ? (o.key as MeasureKey) : null
+      const value = num(o.value)
+      return key && value != null && value >= MEASURE[key].lo && value <= MEASURE[key].hi ? { type: 'measure', key, value: Math.round(value * 10) / 10, day: dayIn(o.day) } : null
+    }
+    case 'diary': {
+      const t = text(o.text, 300)
+      return t ? { type: 'diary', text: t, day: dayIn(o.day) } : null
     }
     case 'note': {
       const t = text(o.text, 600)
@@ -85,13 +109,83 @@ export function parseCoachReply(raw: string): Parsed {
   if (!trimmed) return { ok: false, error: 'Paste the reply first.' }
   let json: unknown
   try { json = extract(trimmed) } catch { return { ok: true, cards: [{ type: 'note', text: trimmed.slice(0, 1200) }], dropped: 0 } }
-  const list = json && typeof json === 'object' ? (json as { cards?: unknown }).cards : undefined
-  if (!Array.isArray(list)) return { ok: true, cards: [{ type: 'note', text: trimmed.slice(0, 1200) }], dropped: 0 }
+  const obj = json && typeof json === 'object' ? (json as { cards?: unknown; reply?: unknown }) : {}
+  const reply = text(obj.reply, 1500) || undefined
+  const list = obj.cards
+  if (!Array.isArray(list)) {
+    return reply ? { ok: true, cards: [], dropped: 0, text: reply } : { ok: true, cards: [{ type: 'note', text: trimmed.slice(0, 1200) }], dropped: 0 }
+  }
   const cards = list.slice(0, MAX_CARDS * 2).map(readCard)
   const good = cards.filter((x): x is Card => !!x).slice(0, MAX_CARDS)
   const dropped = list.length - good.length
-  if (!good.length) return { ok: false, error: 'Nothing in that reply looked right to log or show. Ask again, or paste a plain answer.' }
-  return { ok: true, cards: good, dropped }
+  if (!good.length && !reply) return { ok: false, error: 'Nothing in that reply looked right to log or show. Ask again, or paste a plain answer.' }
+  return { ok: true, cards: good, dropped, text: reply }
+}
+
+/** Which day a change is for. Today, yesterday or a date in the last 30 days. Anything else is null, so it is skipped, never guessed. */
+export function resolveDay(day: string | undefined, fallback: string, today: string): string | null {
+  if (!day) return fallback
+  if (day === 'today') return today
+  if (day === 'yesterday') return addDays(today, -1)
+  return day <= today && day >= addDays(today, -30) && !Number.isNaN(Date.parse(day)) ? day : null
+}
+
+const dayWords = (k: string | null, today: string) => (k == null ? 'a date I could not read' : k === today ? 'today' : k === addDays(today, -1) ? 'yesterday' : fmt(k, { weekday: 'short', day: 'numeric', month: 'short' }))
+
+/** One plain line for the "I am making these changes" list. */
+export function describeChange(c: ChangeCard, today: string, fallback = today): string {
+  const when = dayWords(resolveDay(c.day, fallback, today), today)
+  if (c.type === 'log') return `Log ${c.lift}, ${c.sets.map((x) => `${x.w} kg x ${x.r}`).join(', ')}, for ${when}`
+  if (c.type === 'soreness') return `Mark ${muscleLabel(c.muscle).toLowerCase()} sore ${['', 'a little', 'a lot', 'sharp'][c.level]}, for ${when}`
+  if (c.type === 'measure') return `Save ${MEASURE[c.key].label} ${c.value} ${MEASURE[c.key].unit}, for ${when}`
+  return `Add a note for ${when}: "${c.text}"`
+}
+
+/**
+ * Applies the agreed changes to a copy of the data. Never overwrites: sets and notes are added, soreness can only go up.
+ * A change with a date outside the last 30 days is skipped and counted. Touched days get a new edit time so sync keeps them.
+ */
+export function applyChanges(data: AppData, cards: Card[], today: string, fallback: string, now: number, newId: () => string): { data: AppData; applied: number; skipped: number } {
+  const next = structuredClone(data)
+  let applied = 0
+  let skipped = 0
+  for (const c of cards.filter(isChange).slice(0, MAX_CARDS)) {
+    const k = resolveDay(c.day, fallback, today)
+    if (!k) { skipped++; continue }
+    const d = (next.days[k] ??= blankDay())
+    if (c.type === 'log') {
+      const found = findLift(c.lift, next.settings)
+      const id = ensureLift(next.settings, c.lift, c.muscles, found?.id ?? newId())
+      addSets(d, id, c.sets)
+      next.su = now
+    } else if (c.type === 'soreness') {
+      d.sore = { ...d.sore, [c.muscle]: Math.max(d.sore?.[c.muscle] ?? 0, c.level) }
+    } else if (c.type === 'measure') {
+      if (c.key === 'wt') d.wt = c.value
+      else if (c.key === 'waist') d.waist = c.value
+      else d.meas = { ...d.meas, [c.key]: c.value }
+    } else {
+      d.note = d.note ? `${d.note}\n${c.text}` : c.text
+    }
+    d.u = now
+    applied++
+  }
+  return { data: next, applied, skipped }
+}
+
+/** The last few turns, as plain text, for the next question. Cards and photos are left out. */
+export function history(thread: { role: 'me' | 'coach'; text?: string }[], max = 8): { role: 'user' | 'model'; text: string }[] {
+  return thread.filter((m) => (m.text ?? '').trim()).slice(-max).map((m) => ({ role: m.role === 'me' ? 'user' as const : 'model' as const, text: (m.text ?? '').slice(0, 800) }))
+}
+
+/** What went wrong asking the trainer, in words that lead to the Claude app instead of a dead end. */
+export const COACH_FAILURE: Record<string, string> = {
+  offline: 'You are offline, so the trainer cannot answer now.',
+  'signed-out': 'Sign in under Plan, then Sync, to ask the trainer in the app.',
+  cap: 'You have used today\'s free AI messages. They reset around 5:30 in the morning.',
+  'not-set-up': 'The trainer is not switched on yet.',
+  'not-allowed': 'The trainer is switched on only for some accounts, and this one is not on the list.',
+  failed: 'The trainer could not answer this time.',
 }
 
 const norm = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()

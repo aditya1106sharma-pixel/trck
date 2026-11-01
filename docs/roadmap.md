@@ -20,6 +20,10 @@ Today, Train, Muscles, Fuel, Progress, Plan. Local only, backup and restore, ins
 - Next, not approved yet: slice 3 set by set logging and the navigation revamp (direction B), slice 4 the in app coach (needs a go ahead for a new Edge Function and has a 20 a day free limit), slice 5 body photos on the phone and the recomposition view.
 - Known gap: traps are not a muscle in TRCK yet, so trap work counts under back and shoulders.
 
+## Shipped in 0.8.0
+- Slice 4: the trainer chat in the app, with Agree and apply. Needs `docs/coach-setup.md` done once. Free limit about 20 messages a day for the whole Google project, shared with meal photos.
+- Still not built: set by set logging and the navigation revamp (direction B), body photos on the phone, the recomposition view, clips in the app, traps as a muscle.
+
 ## Before friends sign up: what breaks with many users
 Reviewed from `supabase/schema.sql` and `src/lib/sync.ts`, ordered by risk. Nothing here is fixed yet unless it says so. Supabase limits change, so check their current free tier page before relying on a number.
 

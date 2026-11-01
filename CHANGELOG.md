@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 - 2026-11-02
+- The Trainer now answers inside TRCK. Type or say what you did, ask about a machine, or tell it how you feel, and it replies in the app, knowing your week and the last few messages. You can attach a photo.
+- When your message means a change to your log, it says so: "I want to make 2 changes", with each one in a plain line (log these sets for yesterday, mark quads sore, save your waist, add a note). Nothing is saved until you tap Agree and apply. Skip leaves your log exactly as it was.
+- Changes only add. Sets and notes are added after what is there, and soreness can only go up. A change with a date outside the last 30 days is skipped and you are told.
+- It never invents numbers. If you say you did legs without weights or reps, it asks.
+- It uses your free Gemini messages: about 20 a day, shared with meal photos, and the header shows how many are used. When they run out, or you are offline or signed out, it says so and keeps your question for the Claude app.
+- The Claude app route is still there for clips, under Use the Claude app instead.
+- One setup step: deploy the `coach` function, see docs/coach-setup.md.
+
 ## 0.7.0 - 2026-11-01
 - Train has a Trainer. Type a question, or add a photo or a clip of a machine or a lift, and tap Ask Claude. Your week goes with it: what you lifted, what is ready, what is sore, your measurements. The photo or clip goes to Claude through your phone's share sheet, not to TRCK.
 - Paste Claude's reply back and it turns into cards: an exercise with cues and a demo link, advice to rest, swap or push, soreness to save, and sets to log. Nothing is logged until you tap Log. A reply that is plain text still shows.

@@ -226,18 +226,20 @@ async function trainFor(page: Page, days: Record<string, unknown> = {}) {
   await page.goto('/')
   await tabs(page).getByRole('button', { name: 'Train' }).click()
 }
+const openClaude = (page: Page) => page.getByText('Use the Claude app instead').click()
 const stored = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('trck:v1') ?? '{}'))
 
-test('ask the trainer, paste the reply, and log only when you tap Log', async ({ page }) => {
+test('the Claude app route: ask, paste the reply, and log only when you tap Log', async ({ page }) => {
   const y = new Date(Date.now() - 5 * 36e5); y.setDate(y.getDate() - 1)
   const sets = (n: number) => Array.from({ length: n }, () => ({ w: 30, r: 10 }))
   await trainFor(page, { [key(y)]: { lift: { chest: sets(3), pulldown: sets(3), row: sets(3) } } })
   await expect(page.getByRole('heading', { name: 'Trainer' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Ask Claude' })).toBeDisabled()
-  await page.getByLabel('Your question').fill('Pec deck, new to me. Fit tonight?')
-  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'pecdeck.png', mimeType: 'image/png', buffer: PNG })
-  await expect(page.getByText(/Ready to send: pecdeck.png/)).toBeVisible()
-  await page.getByRole('button', { name: 'Ask Claude' }).click()
+  await openClaude(page)
+  await expect(page.getByRole('button', { name: 'Send to the Claude app' })).toBeDisabled()
+  await page.getByLabel('Message').fill('Pec deck, new to me. Fit tonight?')
+  await page.locator('#coach-photo').setInputFiles({ name: 'pecdeck.png', mimeType: 'image/png', buffer: PNG })
+  await expect(page.getByText(/Photo ready: pecdeck.png/)).toBeVisible()
+  await page.getByRole('button', { name: 'Send to the Claude app' }).click()
   await expect(page.getByText('Pec deck, new to me. Fit tonight?')).toBeVisible()
   await expect(page.getByText('With pecdeck.png')).toBeVisible()
   expect(JSON.stringify(await page.evaluate(() => Object.entries(localStorage)))).not.toContain('iVBOR') // the photo is kept nowhere
@@ -275,6 +277,7 @@ test('ask the trainer, paste the reply, and log only when you tap Log', async ({
 
 test('a plain text reply still shows, and an unusable one says so', async ({ page }) => {
   await trainFor(page)
+  await openClaude(page)
   await page.getByLabel("Claude's reply").fill('Your chest is ready. Try 2 light sets of pec deck.')
   await page.getByRole('button', { name: 'Read the reply' }).click()
   await expect(page.getByText('Your chest is ready. Try 2 light sets of pec deck.')).toBeVisible()
@@ -328,6 +331,7 @@ test('a damaged saved thread does not blank Train, and Log twice logs once', asy
   await expect(page.getByRole('heading', { name: 'Trainer' })).toBeVisible()
   await expect(page.getByText('Old question')).toBeVisible()
   await expect(page.getByText('Still here')).toBeVisible()
+  await openClaude(page)
   await page.getByLabel("Claude's reply").fill(JSON.stringify({ cards: [{ type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }] }] }))
   await page.getByRole('button', { name: 'Read the reply' }).click()
   const log = page.getByRole('button', { name: 'Log 1 set' })
@@ -338,8 +342,134 @@ test('a damaged saved thread does not blank Train, and Log twice logs once', asy
 
 test('a saved soreness report cannot lower a level the person already set', async ({ page }) => {
   await trainFor(page, { [todayKey()]: { sore: { back: 3 } } })
+  await openClaude(page)
   await page.getByLabel("Claude's reply").fill(JSON.stringify({ cards: [{ type: 'soreness', muscle: 'back', level: 1, note: 'a little' }] }))
   await page.getByRole('button', { name: 'Read the reply' }).click()
   await page.getByRole('button', { name: 'Save soreness' }).click()
   expect((await stored(page)).days[todayKey()].sore).toEqual({ back: 3 })
+})
+
+// 0.8.0: the conversation happens in the app. The coach function is mocked, and nothing is saved until the person agrees.
+const yesterdayKey = () => { const y = new Date(Date.now() - 5 * 36e5); y.setDate(y.getDate() - 1); return key(y) }
+const COACH_REPLY = {
+  reply: 'You did legs yesterday. I will log the leg press and note that your quads are sore.',
+  cards: [
+    { type: 'log', lift: 'Leg press', muscles: ['quads', 'glutes'], sets: [{ w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 8 }], day: 'yesterday' },
+    { type: 'soreness', muscle: 'quads', level: 2, note: 'a lot', day: 'today' },
+    { type: 'advice', title: 'Rest your quads', body: 'Leave legs for two days.', action: 'rest', muscles: ['quads'] },
+  ],
+  used: 3, cap: 20,
+}
+async function chatPage(page: Page) {
+  await signedIn(page)
+  await page.goto('/')
+  await tabs(page).getByRole('button', { name: 'Train' }).click()
+}
+
+test('say what you did, the trainer answers in the app, and changes apply only after you agree', async ({ page }) => {
+  const asked: { messages: { role: string; text: string }[]; context: string; today: string; image?: string }[] = []
+  await page.route('**/functions/v1/coach', async (r) => {
+    expect(r.request().headers().authorization).toBe('Bearer e2e-token')
+    asked.push(r.request().postDataJSON())
+    await r.fulfill({ json: COACH_REPLY })
+  })
+  await chatPage(page)
+  await expect(page.getByText('Free AI messages: 20 a day')).toBeVisible()
+  await page.getByLabel('Message').fill('Yesterday I did leg press, 3 sets of 10 at 60')
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  await expect(page.getByText('You did legs yesterday. I will log the leg press')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'I want to make 2 changes' })).toBeVisible()
+  await expect(page.getByText('Log Leg press, 60 kg x 10, 60 kg x 10, 60 kg x 8, for yesterday')).toBeVisible()
+  await expect(page.getByText('Mark quads sore a lot, for today')).toBeVisible()
+  await expect(page.getByText('3 of 20 AI messages today')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Rest your quads' })).toBeVisible() // advice shows, it is not a change
+  expect(asked).toHaveLength(1)
+  expect(asked[0].messages.at(-1)).toEqual({ role: 'user', text: 'Yesterday I did leg press, 3 sets of 10 at 60' })
+  expect(asked[0].context).toMatch(/recomposition/)
+  expect(asked[0].today).toBe(todayKey())
+  expect(asked[0].image).toBeUndefined()
+
+  // Nothing saved yet.
+  const before = await stored(page)
+  expect(before.days[yesterdayKey()]?.lift?.legpress).toBeUndefined()
+  expect(before.days[todayKey()]?.sore).toBeUndefined()
+  expect(await sideways(page)).toBe(false)
+  await page.screenshot({ path: `test-results/chat-${test.info().project.name}.png`, fullPage: true })
+
+  await page.getByRole('button', { name: 'Agree and apply' }).click()
+  await expect(page.getByRole('heading', { name: 'Changes saved' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Agree and apply' })).toHaveCount(0)
+  const after = await stored(page)
+  expect(after.days[yesterdayKey()].lift.legpress).toEqual([{ w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 8 }])
+  expect(after.days[todayKey()].sore).toEqual({ quads: 2 })
+
+  // The next question carries the conversation so far.
+  await page.getByLabel('Message').fill('Should I train legs tomorrow?')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect.poll(() => asked.length).toBe(2)
+  expect(asked[1].messages.map((m) => m.role)).toEqual(['user', 'model', 'user'])
+  expect(asked[1].messages[1].text).toMatch(/You did legs yesterday/)
+  expect(asked[1].context).toMatch(/Leg press 60x10, 60x10, 60x8/) // the agreed log is now part of the week
+})
+
+test('Skip leaves the log exactly as it was', async ({ page }) => {
+  await page.route('**/functions/v1/coach', (r) => r.fulfill({ json: COACH_REPLY }))
+  await chatPage(page)
+  const before = JSON.stringify((await stored(page)).days)
+  await page.getByLabel('Message').fill('I did legs yesterday')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await page.getByRole('button', { name: 'Skip' }).click()
+  await expect(page.getByRole('heading', { name: 'Changes skipped' })).toBeVisible()
+  expect(JSON.stringify((await stored(page)).days)).toBe(before)
+})
+
+test('a change with a wrong date is skipped, and the person is told', async ({ page }) => {
+  await page.route('**/functions/v1/coach', (r) => r.fulfill({ json: { reply: 'Logging it.', cards: [
+    { type: 'log', lift: 'Leg press', muscles: ['quads'], sets: [{ w: 60, r: 10 }], day: '2020-01-01' },
+    { type: 'measure', key: 'waist', value: 91, day: 'today' },
+  ], used: 1, cap: 20 } }))
+  await chatPage(page)
+  await page.getByLabel('Message').fill('Log legs')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText(/a date I could not read|for 2020/).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Agree and apply' }).click()
+  await expect(page.getByText(/1 saved. 1 skipped/)).toBeVisible()
+  const d = (await stored(page)).days
+  expect(d[todayKey()].waist).toBe(91)
+  expect(Object.keys(d).some((k) => k.startsWith('2020'))).toBe(false)
+})
+
+test('a photo goes to the trainer function, and is kept nowhere', async ({ page }) => {
+  let image = ''
+  await page.route('**/functions/v1/coach', async (r) => { image = r.request().postDataJSON().image ?? ''; await r.fulfill({ json: { reply: 'That looks like a pec deck.', cards: [], used: 1, cap: 20 } }) })
+  await chatPage(page)
+  await page.locator('#coach-photo').setInputFiles({ name: 'machine.png', mimeType: 'image/png', buffer: PNG })
+  await expect(page.getByText('Photo ready: machine.png')).toBeVisible()
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText('That looks like a pec deck.')).toBeVisible()
+  expect(image.length).toBeGreaterThan(50)
+  const all = await page.evaluate(() => Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? '').join(''))
+  expect(all).not.toContain(image.slice(0, 40))
+})
+
+test('over the daily limit or not switched on, it says so and offers the Claude app', async ({ page }) => {
+  await page.route('**/functions/v1/coach', (r) => r.fulfill({ status: 429, json: { error: 'cap', cap: 20 } }))
+  await chatPage(page)
+  await page.getByLabel('Message').fill('Is the pec deck ok tonight?')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByRole('alert')).toContainText("used today's free AI messages")
+  await expect(page.getByLabel('Message')).toHaveValue('Is the pec deck ok tonight?') // the question is kept
+  await expect(page.getByRole('button', { name: 'Send it to the Claude app instead' })).toBeEnabled()
+  await page.unroute('**/functions/v1/coach')
+  await page.route('**/functions/v1/coach', (r) => r.fulfill({ status: 404, body: 'not found' }))
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('not switched on yet')
+})
+
+test('signed out, it points to sign in instead of failing quietly', async ({ page }) => {
+  await trainFor(page)
+  await page.getByLabel('Message').fill('I did legs yesterday')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByRole('alert')).toContainText('Sign in under Plan')
 })
