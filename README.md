@@ -29,6 +29,9 @@ npm run build
 
 First time: on the laptop, Plan, Restore or import, choose `my-data.json`. It syncs up and appears on the phone.
 
+## Move logs to and from a chat
+`npm run sync:export` prints the last days as TRCK-SYNC text to paste into Claude. `npm run sync:import` reads text back into `my-data.json`, with a dry run, a question for every difference and a backup first. See `docs/chat-sync.md`.
+
 ## Checks and previews
 - Pull requests run typecheck, logic tests, the build and a browser smoke test (`.github/workflows/ci.yml`). Run the browser test yourself with `npm run build` then `npm run test:e2e`. The first run needs `npx playwright install chromium`.
 - Branch preview addresses: see `docs/previews.md`.

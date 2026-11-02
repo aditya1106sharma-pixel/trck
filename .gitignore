@@ -10,3 +10,6 @@ my-data.json
 
 test-results
 playwright-report
+trck-backups
+*.tmp
+trck-brief.txt
