@@ -4,6 +4,7 @@ import { applyImport, chatFoodId, exportLine, exportSync, parseSync, planImport,
 import { blankDay, type AppData, type Day } from './types'
 
 const TODAY = '2026-11-02'
+const S0 = blankData().settings
 const day = (o: Partial<Day>): Day => ({ ...blankDay(), u: 1, ...o })
 
 function sample(): AppData {
@@ -133,5 +134,63 @@ describe('chat field in storage', () => {
     const a = blankData()
     a.days['2026-11-01'] = day({ chat: { session: 'badminton' } })
     expect(parseImport(exportJson(a)).days['2026-11-01'].chat).toEqual({ session: 'badminton' })
+  })
+})
+
+describe('TRCK-SYNC review fixes', () => {
+  it('keeps the other total when the chat food entry has a quantity', () => {
+    const d = sample()
+    d.days['2026-10-31'].f.push({ id: chatFoodId('2026-10-31'), n: 'Logged in chat', p: 20, k: 300, q: 2, t: 'chat' })
+    const before = exportLine(d.days['2026-10-31'], '2026-10-31', d.settings)
+    expect(before).toMatch(/kcal=1063.5/)
+    const r = run('TRCK-SYNC v1\ndate=2026-10-31 | protein_g=120', d, ['2026-10-31:protein_g'])
+    const line = exportLine(r.data.days['2026-10-31'], '2026-10-31', d.settings)
+    expect(line).toMatch(/protein_g=120 /)
+    expect(line).toMatch(/kcal=1063.5 /)
+  })
+  it('treats a pasted 0 onto no value as already there', () => {
+    const d = sample()
+    const t = 'TRCK-SYNC v1\ndate=2026-11-02 | sleep_hrs=0 | protein_g=0 | kcal=0'
+    expect(run(t, d).changed).toEqual([])
+  })
+  it('imports meals=Logged in chat once, then changes nothing', () => {
+    const t = 'TRCK-SYNC v1\ndate=2026-11-02 | meals=Logged in chat | protein_g=30'
+    const r = run(t, sample())
+    expect(r.changed).toEqual(['2026-11-02'])
+    expect(run(t, r.data).changed).toEqual([])
+  })
+  it('does not store a session that matches the lifts, so it follows later lifts', () => {
+    const t = 'TRCK-SYNC v1\ndate=2026-11-02 | session=back | top_sets=pulldown 40x10'
+    const r = run(t, sample())
+    expect(r.plan.conflicts).toEqual([])
+    expect(r.data.days['2026-11-02'].chat).toBeUndefined()
+    const d2 = run('TRCK-SYNC v1\ndate=2026-10-31 | session=back | top_sets=pulldown 40x10', sample())
+    expect(d2.plan.conflicts).toEqual([])
+    expect(d2.data.days['2026-10-31'].chat).toBeUndefined()
+    expect(exportLine(d2.data.days['2026-10-31'], '2026-10-31', S0)).toMatch(/session=back /)
+  })
+  it('stores a session that differs from the lifts, like badminton', () => {
+    const r = run('TRCK-SYNC v1\ndate=2026-10-31 | session=badminton', sample(), ['2026-10-31:session'])
+    expect(r.data.days['2026-10-31'].chat).toEqual({ session: 'badminton' })
+  })
+  it('re-imports its own export even with long notes and big sets', () => {
+    const d = sample()
+    d.days['2026-11-01'].note = 'x'.repeat(800)
+    d.days['2026-11-01'].lift.legpress = [{ w: 600, r: 150 }]
+    const r = run(exportSync(d, 3, TODAY), d)
+    expect(r.changed).toEqual([])
+  })
+  it('reads sets with spaces after the commas and names with spaces', () => {
+    const r = run('TRCK-SYNC v1\ndate=2026-11-02 | top_sets=Lat pulldown 45x10, 10, 9; row 40 x10', sample())
+    expect(r.data.days['2026-11-02'].lift.pulldown).toEqual([{ w: 45, r: 10 }, { w: 45, r: 10 }, { w: 45, r: 9 }])
+    expect(r.data.days['2026-11-02'].lift.row).toEqual([{ w: 40, r: 10 }])
+  })
+  it('counts error lines in the pasted text, blank lines and fences included', () => {
+    const p = parseSync('```text\nTRCK-SYNC v1\n\ndate=2026-11-01 | energy=9', S0, TODAY)
+    expect(p.ok ? [] : p.errors).toEqual(['Line 4: energy=9 should be between 1 and 5.'])
+  })
+  it('counts a blank key towards appearing twice', () => {
+    const p = parseSync('TRCK-SYNC v1\ndate=2026-11-01 | weight_kg= | weight_kg=72', S0, TODAY)
+    expect(p.ok).toBe(false)
   })
 })

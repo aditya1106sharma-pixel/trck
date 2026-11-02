@@ -27,6 +27,8 @@ const isChatFood = (x: FoodEntry, date: string) => x.id === chatFoodId(date)
 
 const LEGS: MuscleId[] = ['quads', 'hamstrings', 'glutes', 'calves']
 const MAX_TEXT = 500
+/** Keys TRCK shows as no value when they are 0. */
+const ZERO_IS_NONE = ['weight_kg', 'sleep_hrs', 'protein_g', 'kcal'] as const
 
 // ---------- export ----------
 
@@ -53,7 +55,11 @@ function hasData(d: Day): boolean {
 
 /** What the day's training was, from the lifts logged. "rest" for a day with data and no training. */
 export function sessionOf(d: Day, s: Settings): string | undefined {
-  if (d.chat?.session) return d.chat.session
+  return d.chat?.session ?? liftSession(d, s)
+}
+
+/** The session worked out from the log alone, ignoring a label told in chat. */
+export function liftSession(d: Day, s: Settings): string | undefined {
   const main = new Set<MuscleId>()
   for (const ex of allExercises(s)) {
     if (!validSets(d.lift[ex.id]).length) continue
@@ -92,7 +98,7 @@ export function dayValues(d: Day, date: string, s: Settings): Partial<Record<Key
   const lift = liftText(d, s)
   if (lift) v.top_sets = lift
   for (const key of ['gummy', 'energy', 'hunger', 'gut'] as const) if (d.chat?.[key]) v[key] = d.chat[key]
-  if (d.note.trim()) v.notes = clean(d.note)
+  if (d.note.trim()) v.notes = clean(d.note).slice(0, MAX_TEXT)
   return v
 }
 
@@ -100,7 +106,7 @@ export function mealsText(d: Day, date: string): string {
   return clean(d.f
     .filter((x) => !(isChatFood(x, date) && x.n === CHAT_FOOD_NAME))
     .map((x) => (isChatFood(x, date) || x.q === 1 ? x.n : `${x.n} x${num(x.q)}`))
-    .join(', '))
+    .join(', ')).slice(0, MAX_TEXT)
 }
 
 export function exportLine(d: Day | undefined, date: string, s: Settings): string {
@@ -142,8 +148,8 @@ const text = (x: string) => (x.length > MAX_TEXT ? `at most ${MAX_TEXT} characte
 const scale = rangeNum(1, 5, true)
 
 const RULES: Record<Exclude<Key, 'date' | 'top_sets'>, (x: string) => string | null> = {
-  weight_kg: rangeNum(20, 300), sleep_in: clock, sleep_out: clock, sleep_hrs: rangeNum(0, 24), sleep_q: scale,
-  steps: rangeNum(0, 200000, true), protein_g: rangeNum(0, 600), kcal: rangeNum(0, 10000), meals: text,
+  weight_kg: rangeNum(1, 500), sleep_in: clock, sleep_out: clock, sleep_hrs: rangeNum(0, 24), sleep_q: scale,
+  steps: rangeNum(0, 200000, true), protein_g: rangeNum(0, 2000), kcal: rangeNum(0, 20000), meals: text,
   session: text, gummy: text, energy: scale, hunger: scale, gut: scale, notes: text,
 }
 
@@ -162,22 +168,23 @@ function findExercise(name: string, s: Settings): Exercise | undefined {
 export function parseLifts(x: string, s: Settings): { lifts: Lift[] } | { error: string } {
   const lifts: Lift[] = []
   for (const chunk of x.split(';').map((c) => c.trim()).filter(Boolean)) {
-    const sp = chunk.lastIndexOf(' ')
-    if (sp < 1) return { error: `"${chunk}" needs a lift and its sets, like "pulldown 45x10,10,9"` }
-    const name = chunk.slice(0, sp)
+    const words = chunk.split(/\s+/)
+    const at = words.findIndex((w, i) => i > 0 && /^\d/.test(w))
+    if (at < 1) return { error: `"${chunk}" needs a lift and its sets, like "pulldown 45x10,10,9"` }
+    const name = words.slice(0, at).join(' ')
     const ex = findExercise(name, s)
     if (!ex) return { error: `"${name}" is not a lift in your routine. Use its id (${allExercises(s).map((e) => e.id).join(', ')}) or add it in the app first` }
     if (lifts.some((l) => l.id === ex.id)) return { error: `"${name}" is listed twice` }
     const sets: SetIn[] = []
     let w: number | null = null
-    for (const tok of chunk.slice(sp + 1).split(',')) {
+    for (const tok of words.slice(at).join('').split(',')) {
       const m = /^(?:(\d+(?:\.\d{1,2})?)x)?(\d+)$/.exec(tok.trim())
       if (!m) return { error: `"${tok}" in "${chunk}" should be weight x reps, like 45x10, or just reps after the first set` }
       if (m[1] !== undefined) w = Number(m[1])
       if (w === null) return { error: `the first set of "${name}" needs a weight, like 45x10` }
       const r = Number(m[2])
-      if (w <= 0 || w > 500) return { error: `weight ${w} for "${name}" should be between 0 and 500 kg` }
-      if (r < 1 || r > 100) return { error: `${r} reps for "${name}" should be between 1 and 100` }
+      if (w <= 0 || w > 1000) return { error: `weight ${w} for "${name}" should be more than 0 and at most 1000 kg` }
+      if (r < 1 || r > 1000) return { error: `${r} reps for "${name}" should be between 1 and 1000` }
       sets.push({ w, r })
     }
     lifts.push({ id: ex.id, sets })
@@ -189,13 +196,14 @@ export type ParseResult = { ok: true; days: Parsed[] } | { ok: false; errors: st
 
 /** Checks every line. Any error means nothing is imported. Code fences and the "missing:" note are skipped. */
 export function parseSync(input: string, s: Settings, today = todayKey()): ParseResult {
-  const lines = input.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('```'))
+  const lines = input.split(/\r?\n/).map((l, i) => ({ l: l.trim(), n: i + 1 })).filter(({ l }) => l && !l.startsWith('```'))
   const errors: string[] = []
-  if (lines[0] !== HEADER) return { ok: false, errors: [`The first line must be "${HEADER}".`] }
+  if (lines[0]?.l !== HEADER) return { ok: false, errors: [`The first line must be "${HEADER}".`] }
   const days: Parsed[] = []
-  lines.slice(1).forEach((line, i) => {
-    const at = `Line ${i + 2}`
+  lines.slice(1).forEach(({ l: line, n }) => {
+    const at = `Line ${n}`
     const v: Partial<Record<Key, string>> = {}
+    const seen = new Set<string>()
     let lifts: Lift[] = []
     for (const seg of line.split(' | ').map((x) => x.trim())) {
       if (/^missing:/.test(seg)) continue
@@ -205,7 +213,8 @@ export function parseSync(input: string, s: Settings, today = todayKey()): Parse
       const val = seg.slice(eq + 1).trim()
       if (!(KEYS as readonly string[]).includes(key)) { errors.push(`${at}: unknown key "${key}". Allowed: ${KEYS.join(', ')}.`); continue }
       const k = key as Key
-      if (v[k] !== undefined) { errors.push(`${at}: "${k}" appears twice.`); continue }
+      if (seen.has(k)) { errors.push(`${at}: "${k}" appears twice.`); continue }
+      seen.add(k)
       if (val === '') continue // a blank is no data, and never clears a stored value
       if (k === 'date') {
         if (!validDate(val)) errors.push(`${at}: date "${val}" must be a real date as YYYY-MM-DD.`)
@@ -255,12 +264,23 @@ export function planImport(data: AppData, days: Parsed[]): Plan {
     const d = stored ?? blankDay()
     const cur = dayValues(d, p.date, data.settings)
     const realFood = d.f.some((x) => !isChatFood(x, p.date))
+    const chatFood = d.f.find((x) => isChatFood(x, p.date))
     for (const key of KEYS) {
       if (key === 'date' || key === 'top_sets') continue
       const to = p.v[key]
       if (to === undefined) continue
       const from = cur[key]
       if (from !== undefined && same(key, from, to)) continue
+      // TRCK shows 0 as no value, so a pasted 0 onto no value is already there
+      if (from === undefined && (ZERO_IS_NONE as readonly string[]).includes(key) && Number(to) === 0) continue
+      if (key === 'meals' && to === CHAT_FOOD_NAME && chatFood?.n === CHAT_FOOD_NAME) continue
+      if (key === 'session') {
+        // compare with what the lifts in this paste would make it, so a matching label is not stored and never goes stale
+        const after = structuredClone(d)
+        for (const l of p.lifts) if (!validSets(after.lift[l.id]).length) after.lift[l.id] = l.sets
+        const derived = liftSession(after, data.settings)
+        if (d.chat?.session === undefined && same(key, derived ?? '', to)) continue
+      }
       if (key === 'meals' && realFood) {
         if (from !== undefined) plan.notes.push(`${p.date} meals: kept "${from}". Meals come from the foods logged in TRCK, so change them in the app.`)
         else plan.notes.push(`${p.date} meals: not added, because this day has foods logged in TRCK.`)
@@ -289,16 +309,25 @@ export function planImport(data: AppData, days: Parsed[]): Plan {
   return plan
 }
 
-/** Sets the chat food entry so the day's total for `field` equals `target`. Other entries are never touched. */
+/**
+ * Sets the chat food entry so the day's total for `field` equals `target`. Other entries are never touched.
+ * A quantity on the entry is folded into its values first, so the other total stays exactly what it was.
+ */
 function setFoodTotal(d: Day, date: string, field: 'p' | 'k', target: number) {
   let e = d.f.find((x) => isChatFood(x, date))
   if (!e) { e = { id: chatFoodId(date), n: CHAT_FOOD_NAME, p: 0, k: 0, q: 1, t: 'chat' }; d.f.push(e) }
+  const q = Number.isFinite(e.q) ? Math.max(0, e.q) : 0
+  if (q !== 1) {
+    e.p *= q; e.k *= q
+    if (e.f !== undefined) e.f *= q
+    if (e.cb !== undefined) e.cb *= q
+    e.q = 1
+  }
   const others = d.f.filter((x) => x !== e).reduce((a, x) => a + x[field] * x.q, 0)
-  e.q = 1
   e[field] = Math.max(0, Math.round((target - others) * 100) / 100)
 }
 
-function setValue(d: Day, date: string, key: string, val: string, lifts: Lift[]) {
+function setValue(d: Day, date: string, key: string, val: string, lifts: Lift[], s: Settings) {
   if (key.startsWith('top_sets ')) {
     const id = key.slice('top_sets '.length)
     const l = lifts.find((x) => x.id === id)
@@ -317,6 +346,14 @@ function setValue(d: Day, date: string, key: string, val: string, lifts: Lift[])
       return
     }
     case 'notes': d.note = val; return
+    case 'session': {
+      // a label that matches the lifts is not kept, so later lifts logged in the app still show
+      const { session: _old, ...rest } = d.chat ?? {}
+      d.chat = rest
+      if (liftSession(d, s) !== val) d.chat.session = val
+      if (!Object.keys(d.chat).length) delete d.chat
+      return
+    }
     default:
       if ((CHAT_FIELDS as readonly string[]).includes(key)) d.chat = { ...(d.chat ?? {}), [key]: val }
   }
@@ -336,9 +373,10 @@ export function applyImport(data: AppData, plan: Plan, take: Set<string>, now = 
     ]
     if (!edits.length) continue
     const d = structuredClone(data.days[p.date] ?? blankDay())
-    // meals first, so a new chat food entry carries its name before totals are set
-    edits.sort((a, b) => (a[0] === 'meals' ? -1 : b[0] === 'meals' ? 1 : 0))
-    for (const [field, val] of edits) setValue(d, p.date, field, val, p.lifts)
+    // meals first, so a new chat food entry carries its name before totals are set; session last, after the lifts
+    const rank = (f: string) => (f === 'meals' ? 0 : f === 'session' ? 2 : 1)
+    edits.sort((a, b) => rank(a[0]) - rank(b[0]))
+    for (const [field, val] of edits) setValue(d, p.date, field, val, p.lifts, data.settings)
     d.u = now
     next.days[p.date] = d
     changed.push(p.date)
