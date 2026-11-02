@@ -50,7 +50,12 @@ export type Day = {
   plan?: string[] // lift ids from Start this session, in order (0.6.0)
   sore?: Partial<Record<MuscleId, number>> // 1 a little, 2 a lot, 3 sharp (0.7.0)
   meas?: Partial<Record<'chest' | 'arm' | 'thigh' | 'hip', number>> // cm; weight and waist use wt and waist (0.7.0)
+  chat?: Partial<Record<ChatField, string>> // TRCK-SYNC values the app has no screen for, kept so they export again (TRCK-SYNC)
 }
+
+/** TRCK-SYNC keys with no home in the log. `session` here is a label told in chat, like badminton, and wins over the one worked out from lifts. */
+export const CHAT_FIELDS = ['sleep_in', 'sleep_out', 'sleep_q', 'steps', 'gummy', 'energy', 'hunger', 'gut', 'session'] as const
+export type ChatField = (typeof CHAT_FIELDS)[number]
 
 export type Food = {
   n: string

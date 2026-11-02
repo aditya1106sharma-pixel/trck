@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:e2e": "npm run build:e2e && playwright test",
     "typecheck": "tsc --noEmit",
-    "build:e2e": "vite build --mode e2e"
+    "build:e2e": "vite build --mode e2e",
+    "sync:export": "vite-node scripts/trck-sync.ts -- export",
+    "sync:import": "vite-node scripts/trck-sync.ts -- import"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.45.4",

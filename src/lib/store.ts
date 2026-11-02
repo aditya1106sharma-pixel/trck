@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { blankDay, DEFAULT_SETTINGS, SCHEMA_VERSION, type AppData, type Day, type Settings } from './types'
+import { blankDay, CHAT_FIELDS, DEFAULT_SETTINGS, SCHEMA_VERSION, type AppData, type Day, type Settings } from './types'
 
 const KEY = 'trck:v1'
 const OLD_KEY = 'recomp-log-v1' // the first prototype, same origin only if it was ever hosted here
@@ -65,6 +65,15 @@ function cleanLevels(raw: unknown, lo: number, hi: number, keys: string[], whole
   return Object.keys(out).length ? out : undefined
 }
 
+function cleanChat(raw: unknown): Day['chat'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if ((CHAT_FIELDS as readonly string[]).includes(k) && typeof v === 'string' && v.trim() && v.length <= 500) out[k] = v.trim()
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 export function normDay(raw: Partial<Day> | undefined): Day {
   const b = blankDay()
   const d = { ...b, ...(raw ?? {}) } as Day
@@ -79,6 +88,8 @@ export function normDay(raw: Partial<Day> | undefined): Day {
   if (!d.sore) delete d.sore
   d.meas = cleanLevels(d.meas, 20, 250, MEAS_KEYS) as Day['meas']
   if (!d.meas) delete d.meas
+  d.chat = cleanChat(d.chat)
+  if (!d.chat) delete d.chat
   if (Array.isArray(d.f)) for (const x of d.f) if (x && x.conf !== undefined && !(typeof x.conf === 'number' && x.conf >= 0 && x.conf <= 1)) delete x.conf
   return d
 }

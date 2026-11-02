@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- `npm run sync:export` and `npm run sync:import` move days to and from a Claude chat as TRCK-SYNC v1 text, one line per day. Import shows a dry run, asks about every value that differs, never clears a value with a blank, and backs up the file before it writes. See docs/chat-sync.md.
+- Days can hold a new optional `chat` field for values the app has no screen for yet (sleep times and quality, steps, gummy, energy, hunger, gut, a session label). Nothing existing changed.
+
 ## 0.8.0 - 2026-11-02
 - The Trainer now answers inside TRCK. Type or say what you did, ask about a machine, or tell it how you feel, and it replies in the app, knowing your week and the last few messages. You can attach a photo.
 - When your message means a change to your log, it says so: "I want to make 2 changes", with each one in a plain line (log these sets for yesterday, mark quads sore, save your waist, add a note). Nothing is saved until you tap Agree and apply. Skip leaves your log exactly as it was.
