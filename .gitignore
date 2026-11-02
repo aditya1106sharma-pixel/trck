@@ -12,3 +12,4 @@ test-results
 playwright-report
 trck-backups
 *.tmp
+trck-brief.txt

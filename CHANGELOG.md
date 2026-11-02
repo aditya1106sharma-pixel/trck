@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `npm run sync:brief` writes one file to paste into a Claude chat so it can plan today's workout and food from your log, and reply in TRCK-SYNC to import back.
 - `npm run sync:export` and `npm run sync:import` move days to and from a Claude chat as TRCK-SYNC v1 text, one line per day. Import shows a dry run, asks about every value that differs, never clears a value with a blank, and backs up the file before it writes. See docs/chat-sync.md.
 - Days can hold a new optional `chat` field for values the app has no screen for yet (sleep times and quality, steps, gummy, energy, hunger, gut, a session label). Nothing existing changed.
 

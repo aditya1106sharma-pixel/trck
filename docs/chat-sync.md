@@ -5,6 +5,8 @@ Two commands on the laptop work on your backup file. In TRCK open Plan, tap Down
 - `npm run sync:export -- --days 3` prints the last 3 days (default 2), oldest first, in one text block to copy into the chat.
 - `npm run sync:import` asks you to paste the chat's TRCK-SYNC text, then an empty line. `--in pasted.txt` reads it from a file instead, and `--dry-run` only shows what would happen.
 
+- `npm run sync:brief` saves `trck-brief.txt` next to the data file and prints it: your targets, routine with next targets, muscle readiness, TRCK's suggested session for today, habits and score for the last 7 days (`--days N` to change), the log in TRCK-SYNC, and instructions for the chat to plan today and reply in TRCK-SYNC. Paste it into a new Claude chat or attach the file.
+
 To see an import in the app: Plan, Restore or import, choose the file. Restore replaces everything on that device with the file, so anything logged there after you downloaded the backup is lost (the app keeps one copy from just before the restore, under Kept copies). To be safe:
 
 1. Download the backup right before you export or import.

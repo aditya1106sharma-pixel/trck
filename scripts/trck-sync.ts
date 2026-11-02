@@ -1,10 +1,13 @@
 // TRCK-SYNC v1 on the command line. Works on the JSON backup file from Plan, Download backup (default my-data.json).
 //   npm run sync:export -- [--days N] [--file my-data.json]
 //   npm run sync:import -- [--file my-data.json] [--in pasted.txt] [--dry-run]
+//   npm run sync:brief -- [--days N] [--file my-data.json] [--out trck-brief.txt]
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
+import { chatBrief } from '../src/lib/brief'
+import { todayKey } from '../src/lib/dates'
 import { exportJson, parseImport } from '../src/lib/store'
 import { applyImport, describePlan, exportSync, HEADER, parseSync, planImport } from '../src/lib/tracksync'
 import type { AppData } from '../src/lib/types'
@@ -25,11 +28,25 @@ function load(): AppData {
   try { return parseImport(readFileSync(file, 'utf8')) } catch (e) { fail(`Could not read ${file}: ${e instanceof Error ? e.message : e}`) }
 }
 
-function runExport() {
+function daysOpt(def: number): number {
   const raw = opt('--days')
-  const n = raw === undefined ? 2 : Number(raw)
+  const n = raw === undefined ? def : Number(raw)
   if (!Number.isInteger(n) || n < 1 || n > 366) fail('--days must be a whole number from 1 to 366.')
-  console.log('```text\n' + exportSync(load(), n) + '\n```')
+  return n
+}
+
+function runExport() {
+  console.log('```text\n' + exportSync(load(), daysOpt(2)) + '\n```')
+}
+
+/** Everything a chat needs to plan today, saved to a file and printed. */
+function runBrief() {
+  const now = Date.now()
+  const text = chatBrief(load(), todayKey(now), now, daysOpt(7))
+  const out = resolve(opt('--out') ?? join(dirname(file), 'trck-brief.txt'))
+  writeFileSync(out, text + '\n')
+  console.log(text)
+  console.error(`\nSaved to ${out}. Paste all of it into a new Claude chat, or attach the file.`)
 }
 
 async function runImport() {
@@ -94,5 +111,6 @@ async function runImport() {
 }
 
 if (cmd === 'export') runExport()
+else if (cmd === 'brief') runBrief()
 else if (cmd === 'import') await runImport()
-else fail('Use: export [--days N] [--file my-data.json] or import [--file my-data.json] [--in pasted.txt] [--dry-run]')
+else fail('Use: export [--days N] [--file my-data.json], brief [--days N] [--out file], or import [--file my-data.json] [--in pasted.txt] [--dry-run]')
