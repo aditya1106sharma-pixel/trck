@@ -23,7 +23,7 @@ export interface JoinForm {
 
 export const blankJoin = (): JoinForm => ({
   full_name: '', phone: '', email: '', dob: '', gender: '', goal: '', emergency_name: '', emergency_phone: '', source: '',
-  plan_interest: '', health: {}, health_note: '', consent_terms: false, consent_whatsapp: true, website: '',
+  plan_interest: '', health: {}, health_note: '', consent_terms: false, consent_whatsapp: false, website: '',
 })
 
 // Plain yes or no questions, based on common gym pre exercise checks. Not a medical assessment.

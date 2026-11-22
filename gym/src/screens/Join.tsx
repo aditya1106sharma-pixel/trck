@@ -45,6 +45,8 @@ export function Join({ slug }: { slug: string }) {
   }, [f, slug])
   useEffect(() => { window.scrollTo(0, 0) }, [step, done])
 
+  // Errors can sit below the fold on a phone: bring the first one into view.
+  const showFirstError = () => setTimeout(() => document.querySelector('.err, .notice.bad, .yn.missing')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50)
   const set = <K extends keyof JoinForm>(k: K, v: JoinForm[K]) => { setF((x) => ({ ...x, [k]: v })); setErrs((e) => ({ ...e, [k]: undefined })) }
 
   if (loadErr) return <div className="page"><Failed message={loadErr} retry={load} /></div>
@@ -52,7 +54,7 @@ export function Join({ slug }: { slug: string }) {
   if (info === null) return <div className="page"><Failed message="This join link is not right. Ask the gym for the link again." /></div>
 
   const header = (
-    <div className="top"><span className="brand">{info.name}<i>.</i></span><span className="end sm mut">Join</span></div>
+    <div className="top"><span className="brand">{info.name}<i>.</i></span></div>
   )
   if (!info.open) return <div className="page">{header}<div className="center"><div><h3>Not taking requests</h3><p className="mut">{info.name} is not taking new requests online right now. Please ask at the front desk.</p></div></div></div>
   if (done) {
@@ -70,7 +72,7 @@ export function Join({ slug }: { slug: string }) {
   const next = () => {
     const e = checkStep(step, f, today)
     setErrs(e)
-    if (Object.keys(e).length) { track('join_step', { step, blocked: true }, slug); return }
+    if (Object.keys(e).length) { track('join_step', { step, blocked: true }, slug); showFirstError(); return }
     if (step < 2) { setStep(step + 1); track('join_step', { step: step + 1 }, slug); return }
     if (f.website) { setDone(true); return } // a bot filled the hidden field: pretend it worked, send nothing
     setSendErr('')
@@ -83,6 +85,7 @@ export function Join({ slug }: { slug: string }) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Something went wrong.'
         setSendErr(msg)
+        showFirstError()
         track('join_failed', { reason: msg.slice(0, 80) }, slug)
       }
     })
@@ -135,7 +138,7 @@ export function Join({ slug }: { slug: string }) {
           <p className="mut sm">Seven yes or no questions so the trainers know how to look after you. A yes does not stop you joining.</p>
           <div className="list">
             {HEALTH_QUESTIONS.map((h) => (
-              <div className="yn" key={h.key}>
+              <div className={'yn' + (errs.health && typeof f.health[h.key] !== 'boolean' ? ' missing' : '')} key={h.key}>
                 <span className="sm">{h.q}</span>
                 <div className="seg" role="group" aria-label={h.q}>
                   <button type="button" className="yes" aria-pressed={f.health[h.key] === true} onClick={() => set('health', { ...f.health, [h.key]: true })}>Yes</button>

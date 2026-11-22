@@ -138,7 +138,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     return (
       <div className="page"><div className="center"><div>
         <h3>Something broke</h3>
-        <p className="mut">The problem was saved so Aditya can fix it. Reloading usually gets you going again.</p>
+        <p className="mut">The problem was saved so it can be fixed. Reloading usually gets you going again.</p>
         <button className="btn acc" onClick={() => window.location.reload()}>Reload</button>
       </div></div></div>
     )

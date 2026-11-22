@@ -144,7 +144,8 @@ export function ClientDetail({ id, open }: { id: string; open?: TemplateKind }) 
         </div>
         <p className="sm mut"><span className="num" style={{ fontSize: 20, color: 'var(--ink)' }}>{displayPhone(c.phone)}</span>{c.email ? ` · ${c.email}` : ''}{c.user_id ? ' · signed in' : ''}</p>
         <div className="kv">
-          <div><b>{s.daysLeft !== null && (s.state === 'active' || s.state === 'ending') ? s.daysLeft : 0}</b><span>{s.daysLeft === 0 ? 'last day today' : 'days to go'}</span></div>
+          {s.state === 'expired' ? <div><b className="bad">{s.daysSinceEnd}</b><span>days since it ended</span></div>
+            : <div><b>{s.daysLeft ?? 0}</b><span>{s.daysLeft === 0 ? 'last day today' : s.state === 'upcoming' ? 'days covered' : 'days to go'}</span></div>}
           <div><b>{s.coveredThrough ? fmtDate(s.coveredThrough, true) : 'None'}</b><span>{s.state === 'expired' ? 'ended' : 'covered till'}</span></div>
           <div><b className={s.due > 0 ? 'bad' : ''}>{inr(s.due)}</b><span>due</span></div>
         </div>
@@ -162,7 +163,7 @@ export function ClientDetail({ id, open }: { id: string; open?: TemplateKind }) 
             <em>{fmtDate(m.start_date, true)}</em>
             <span className={m.status === 'cancelled' ? 'strike' : ''}>{m.plan_name} to {fmtDate(m.end_date)}{m.note ? ` · ${m.note}` : ''}{m.cancel_reason ? ` · cancelled: ${m.cancel_reason}` : ''}
               {m.status === 'active' && dueOn(m, ps) > 0 && <span className="bad"> · {inr(dueOn(m, ps))} due</span>}</span>
-            <span className="row">{inr(m.price)}{role === 'owner' && m.status === 'active' && <button className="link xs" onClick={() => setPanel({ cancel: m.id })} aria-label={`Cancel ${m.plan_name} plan`}>Cancel</button>}</span>
+            <span className="row">{inr(m.price)}{role === 'owner' && m.status === 'active' && m.end_date >= today && <button className="link xs" onClick={() => setPanel({ cancel: m.id })} aria-label={`Cancel ${m.plan_name} plan`}>Cancel</button>}</span>
           </div>
         ))}</div> : <p className="empty">No plans yet.</p>}
       </section>

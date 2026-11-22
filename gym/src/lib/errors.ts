@@ -15,5 +15,5 @@ export function friendlyError(e: { message?: string; code?: string }): string {
   if (e.code === '42501' || /permission denied|row-level security/i.test(msg)) return 'You do not have access to do that. Ask the owner.'
   if (/JWT|expired|invalid claim|not authenticated/i.test(msg)) return 'You were signed out. Sign in again.'
   if (/rate limit|too many/i.test(msg)) return 'Too many tries. Wait a minute, then try again.'
-  return 'Something went wrong. Try again, and if it keeps happening tell Aditya.'
+  return 'Something went wrong. Try again in a minute. If it keeps happening, tell the gym.'
 }

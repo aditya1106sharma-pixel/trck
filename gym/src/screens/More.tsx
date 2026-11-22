@@ -36,7 +36,7 @@ export function Money() {
         <header><h2>Last 6 months</h2></header>
         <div className="bars" role="img" aria-label={months.map((m) => `${fmtMonth(m.month)} ${inr(m.total)}`).join(', ')}>
           {months.map((m) => (
-            <div key={m.month}><b>{m.total ? inr(m.total).replace('₹', '') : ''}</b><i style={{ height: `${Math.round((m.total / max) * 100)}%` }} /><span>{fmtMonth(m.month).slice(0, 3)}</span></div>
+            <div key={m.month}><b>{m.total ? inr(m.total).replace('₹', '') : ''}</b><i style={{ height: `${Math.max(2, Math.round((m.total / max) * 96))}px` }} /><span>{fmtMonth(m.month).slice(0, 3)}</span></div>
           ))}
         </div>
       </section>
@@ -300,8 +300,8 @@ function InsightsPage() {
           <h2>Join funnel</h2>
           <div className="kv">
             <div><b>{f.viewed}</b><span>opened the form</span></div>
-            <div><b>{f.submitted}</b><span>sent it{pct(f.submitted, f.viewed) !== null ? ` · ${pct(f.submitted, f.viewed)}%` : ''}</span></div>
-            <div><b>{f.approved}</b><span>approved{pct(f.approved, f.submitted) !== null ? ` · ${pct(f.approved, f.submitted)}%` : ''}</span></div>
+            <div><b>{f.submitted}</b><span>sent the form{pct(f.submitted, f.viewed) !== null ? `, ${pct(f.submitted, f.viewed)}% of visitors` : ''}</span></div>
+            <div><b>{f.approved}</b><span>approved{pct(f.approved, f.submitted) !== null ? `, ${pct(f.approved, f.submitted)}% of those sent` : ''}</span></div>
           </div>
           {(c.join_failed ?? 0) > 0 && <p className="sm warn">{c.join_failed} tried to send the form and got an error.</p>}
         </>}
@@ -327,7 +327,7 @@ function InsightsPage() {
         {ins && ins.errors.length ? <div className="timeline">{ins.errors.map((e) => (
           <div key={e.id}><em>{fmtDate(e.created_at.slice(0, 10), true)}</em><span className="sm" style={{ wordBreak: 'break-word' }}>{e.message}</span><span className="xs mut">{e.app_version}</span></div>
         ))}</div> : <p className="sm ok">No problems saved.</p>}
-        <p className="xs mut">Paste these into Claude with /gym-debug to get them fixed.</p>
+        <p className="xs mut">Aditya uses these to find and fix problems.</p>
       </section>
     </>
   )
