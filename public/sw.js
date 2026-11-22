@@ -17,8 +17,11 @@ self.addEventListener('message', (e) => { if (e.data === 'SKIP_WAITING') self.sk
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()))
 })
+// The gym app lives in ./gym/ on the same site. It is always loaded fresh from the network, never from this cache.
+const GYM = new URL('./gym/', self.registration.scope).pathname
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return
+  const url = new URL(e.request.url)
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith(GYM)) return
   e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
     if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)) }
     return res

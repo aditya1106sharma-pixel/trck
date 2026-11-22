@@ -10,3 +10,4 @@ my-data.json
 
 test-results
 playwright-report
+!.env.example

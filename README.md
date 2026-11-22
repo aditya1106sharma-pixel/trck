@@ -37,3 +37,6 @@ First time: on the laptop, Plan, Restore or import, choose `my-data.json`. It sy
 
 ## Work on it with Claude Code
 Open this folder in Claude Code. `CLAUDE.md` explains the project. Commands: `/feature`, `/design-pass`, `/review`, `/ship`, `/weekly`. Agents live in `.claude/agents`. See `docs/claude-code-kickoff.md` for the starter prompt.
+
+## TRCK Gym
+A second app in `gym/` for running a gym: a public join form, owner approval, plans and payments, renewal and payment reminders sent as prefilled WhatsApp messages, and a page where members see their plan. It deploys with TRCK at `https://<your-username>.github.io/trck/gym/` and uses its own free Supabase project. Set it up with `docs/gym/setup.md`. Run it with `npm run dev:gym`.

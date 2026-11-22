@@ -33,5 +33,5 @@ export default defineConfig(({ mode }) => ({
   plugins: [react(), stampServiceWorker()],
   define: { __APP_VERSION__: JSON.stringify(version), ...(mode === 'e2e' ? e2eEnv : {}) },
   build: mode === 'e2e' ? { outDir: 'dist-e2e' } : undefined,
-  test: { environment: 'node', include: ['src/**/*.test.ts'] },
+  test: { environment: 'node', include: ['src/**/*.test.ts', 'gym/src/**/*.test.ts'] },
 }))

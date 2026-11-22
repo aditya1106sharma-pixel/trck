@@ -5,15 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --config gym/vite.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "npm run build:e2e && playwright test",
     "typecheck": "tsc --noEmit",
-    "build:e2e": "vite build --mode e2e"
+    "build:e2e": "vite build --mode e2e && vite build --config gym/vite.config.ts --mode e2e",
+    "dev:gym": "vite --config gym/vite.config.ts",
+    "test:db": "bash scripts/test-db.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.45.4",
+    "qrcode-generator": "1.4.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

@@ -1,0 +1,25 @@
+name: Gym keep alive
+# Supabase pauses a free project after 7 days with no requests. This makes one tiny read twice a week so the
+# gym's database never pauses, even in a quiet week. It reads only the public join page info.
+on:
+  schedule:
+    - cron: '17 3 * * 1,4'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the gym database
+        env:
+          URL: ${{ vars.VITE_GYM_SUPABASE_URL }}
+          KEY: ${{ vars.VITE_GYM_SUPABASE_ANON_KEY }}
+          SLUG: ${{ vars.GYM_SLUG }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "Gym Supabase is not set up yet. Nothing to ping."; exit 0; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/rest/v1/rpc/join_info" \
+            -H "apikey: $KEY" -H 'Content-Type: application/json' \
+            --data "{\"p_slug\":\"${SLUG:-gym}\"}")
+          echo "Supabase answered $code"
+          [ "$code" = "200" ]

@@ -29,5 +29,8 @@ Vite + React 18 + TypeScript (strict) + Vitest. No backend of our own, except op
 ## Style
 Plain sentences, no jargon in the UI, no em dashes. Numbers use the display font. Touch targets 44 px. Works at 360 px wide, light and dark.
 
+## TRCK Gym
+`gym/` is a second app for a friend's gym (members, join requests, renewals, payments, WhatsApp messages the owner sends himself), deployed with TRCK at `/gym/`. Its own Supabase project, schema in `supabase/gym/`. Read `gym/CLAUDE.md` before touching it. `npm run test:db` tests its database. `/gym-debug` fixes problems, `/gym-setup` puts it live, the db-guard agent reviews SQL.
+
 ## Working with the agents
 Use the commands in `.claude/commands`: `/research` then `/prd` for a new idea, `/feature` to build it, `/design-check` to audit screens with Hallmark, `/design-pass` for UI, `/review` before every commit, `/ship` to release, `/weekly` to review a week of logs. Agents in `.claude/agents` are product-lead, designer, engineer, reviewer, qa and nutrition-check. gstack is installed at user level with prefixed names (`/gstack-review` and so on) so it never replaces ours. `docs/agent-org-guide.md` explains how the pieces fit.
