@@ -67,7 +67,7 @@ export function More({ sub }: { sub?: string }) {
 }
 
 function MoreHome() {
-  const { data, role, rows } = useGym()
+  const { data, role, rows, today } = useGym()
   const link = `${window.location.origin}${window.location.pathname}#/join/${data.gym.slug}`
   const [busy, run] = useBusy()
   const download = (name: string, text: string, type: string) => {
@@ -80,7 +80,7 @@ function MoreHome() {
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  const stamp = new Date().toISOString().slice(0, 10)
+  const stamp = today
   return (
     <>
       <Top title="More" />
@@ -224,7 +224,8 @@ function Templates() {
   const [kind, setKind] = useState<TemplateKind>('welcome')
   const [text, setText] = useState(data.gym.templates?.[kind] ?? DEFAULT_TEMPLATES[kind])
   const [busy, run] = useBusy()
-  useEffect(() => { setText(data.gym.templates?.[kind] ?? DEFAULT_TEMPLATES[kind]) }, [kind, data.gym.templates])
+  // Reset only when a different message is picked, so a background refresh never wipes unsaved wording.
+  useEffect(() => { setText(data.gym.templates?.[kind] ?? DEFAULT_TEMPLATES[kind]) }, [kind])
   const save = (value: string | null) => run(async () => {
     const t = { ...data.gym.templates }
     if (value === null || value.trim() === DEFAULT_TEMPLATES[kind]) delete t[kind]
@@ -279,7 +280,12 @@ function InsightsPage() {
   const [days, setDays] = useState(30)
   const [ins, setIns] = useState<Insights | null>(null)
   const [err, setErr] = useState('')
-  useEffect(() => { setErr(''); insights(data.gym.id, days).then(setIns, (e: Error) => setErr(e.message)) }, [data.gym.id, days])
+  useEffect(() => {
+    let current = true // a slow answer for an old choice must not overwrite a newer one
+    setErr('')
+    insights(data.gym.id, days).then((r) => { if (current) setIns(r) }, (e: Error) => { if (current) setErr(e.message) })
+    return () => { current = false }
+  }, [data.gym.id, days])
   const f = ins ? funnelFrom(ins.counts, ins.visitors) : null
   const c = ins?.counts ?? {}
   const active = rows.filter((r) => !r.client.archived && (r.status.state === 'active' || r.status.state === 'ending')).length

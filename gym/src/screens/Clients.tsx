@@ -144,7 +144,7 @@ export function ClientDetail({ id, open }: { id: string; open?: TemplateKind }) 
         </div>
         <p className="sm mut"><span className="num" style={{ fontSize: 20, color: 'var(--ink)' }}>{displayPhone(c.phone)}</span>{c.email ? ` · ${c.email}` : ''}{c.user_id ? ' · signed in' : ''}</p>
         <div className="kv">
-          <div><b>{s.daysLeft !== null && (s.state === 'active' || s.state === 'ending') ? s.daysLeft + 1 : 0}</b><span>days left</span></div>
+          <div><b>{s.daysLeft !== null && (s.state === 'active' || s.state === 'ending') ? s.daysLeft : 0}</b><span>{s.daysLeft === 0 ? 'last day today' : 'days to go'}</span></div>
           <div><b>{s.coveredThrough ? fmtDate(s.coveredThrough, true) : 'None'}</b><span>{s.state === 'expired' ? 'ended' : 'covered till'}</span></div>
           <div><b className={s.due > 0 ? 'bad' : ''}>{inr(s.due)}</b><span>due</span></div>
         </div>
@@ -246,8 +246,8 @@ export function ClientDetail({ id, open }: { id: string; open?: TemplateKind }) 
       )}
       {panel === 'msg' && (
         <MessageSheet gym={data.gym} userId={userId} name={c.full_name} phone={c.phone} consent={c.consent_whatsapp} clientId={c.id}
-          kinds={['welcome', 'renewal', 'expired', 'due', 'portal']} initial={msgKind ?? suggested} onClose={close}
-          vars={() => buildVars({ gym: data.gym, name: c.full_name, email: c.email, link: portalLink, status: s, payments: ps, membership: msgKind === 'welcome' ? ms.find((m) => m.status === 'active') ?? null : undefined })} />
+          kinds={['welcome', 'renewal', 'expired', 'due', ...(c.email ? ['portal' as const] : [])]} initial={msgKind ?? suggested} onClose={close}
+          vars={(k) => buildVars({ gym: data.gym, name: c.full_name, email: c.email, link: portalLink, status: s, payments: ps, membership: k === 'welcome' ? ms.find((m) => m.status === 'active') ?? null : undefined })} />
       )}
       {typeof panel === 'object' && panel && 'receipt' in panel && (
         <MessageSheet gym={data.gym} userId={userId} name={c.full_name} phone={c.phone} consent={c.consent_whatsapp} clientId={c.id}

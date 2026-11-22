@@ -19,7 +19,8 @@ export function PlanForm({ plans, today, start, defaultPlan, submitLabel, onSubm
   const [planId, setPlanId] = useState(first?.id ?? '')
   const [startDate, setStart] = useState(start)
   const [price, setPrice] = useState(String(first?.price ?? ''))
-  const [paid, setPaid] = useState(String(first?.price ?? ''))
+  // Empty by default: a quick tap on Approve must never record money that was not taken.
+  const [paid, setPaid] = useState('')
   const [method, setMethod] = useState<Method>('upi')
   const [paidOn, setPaidOn] = useState(today)
   const [note, setNote] = useState('')
@@ -43,7 +44,7 @@ export function PlanForm({ plans, today, start, defaultPlan, submitLabel, onSubm
   const pick = (id: string) => {
     const p = active.find((x) => x.id === id)
     setPlanId(id)
-    if (p) { setPrice(String(p.price)); setPaid(String(p.price)) }
+    if (p) setPrice(String(p.price))
   }
   const submit = () => {
     setTried(true)
@@ -67,8 +68,9 @@ export function PlanForm({ plans, today, start, defaultPlan, submitLabel, onSubm
         </Field>
       </div>
       <div className="pair">
-        <Field label="Paid now in ₹" error={show('paid')} hint={priceN !== null && paidN !== null && paidN < priceN ? `${inr(priceN - paidN)} will show as due` : 'Leave empty if not paid yet'}>
-          <input inputMode="numeric" value={paid} onChange={(e) => setPaid(e.target.value)} />
+        <Field label="Paid now in ₹" error={show('paid')} hint={!paidN ? 'Empty means not paid yet' : priceN !== null && paidN !== null && paidN < priceN ? `${inr(priceN - paidN)} will show as due` : 'Paid in full'}>
+          <input inputMode="numeric" value={paid} onChange={(e) => setPaid(e.target.value)} placeholder={priceN !== null ? String(priceN) : ''} />
+          {priceN !== null && !paidN && <button type="button" className="link" onClick={() => setPaid(String(priceN))}>Paid in full: {inr(priceN)}</button>}
         </Field>
         <Field label="Paid on" error={show('paidOn')}>
           <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} disabled={!paidN} />
@@ -122,7 +124,7 @@ export function PaymentForm({ memberships, payments, today, onSubmit }: {
       </Field>
       <div className="pair">
         <Field label="Amount in ₹" error={tried ? err : ''}><input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-        <Field label="Paid on"><input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
+        <Field label="Paid on" error={tried && !isDate(paidOn) ? 'Pick the payment date.' : ''}><input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
       </div>
       <MethodPicker value={method} onChange={setMethod} />
       <Field label="Note (optional)"><input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} /></Field>

@@ -59,16 +59,30 @@ export async function copyText(text: string): Promise<boolean> {
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const id = useId()
+  // Callers pass a new onClose on every render. Keep it in a ref so focus is set once, when the sheet opens,
+  // and typing in a field (which re-renders the parent) never moves focus or closes the phone keyboard.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null
     ref.current?.querySelector<HTMLElement>('input,select,textarea,button:not(.close)')?.focus()
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { closeRef.current(); return }
+      if (e.key !== 'Tab' || !ref.current) return
+      // Keep Tab inside the sheet.
+      const all = [...ref.current.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')]
+      if (!all.length) return
+      const first = all[0]
+      const last = all[all.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
     window.addEventListener('keydown', key)
     document.body.style.overflow = 'hidden'
     return () => { window.removeEventListener('keydown', key); document.body.style.overflow = ''; before?.focus?.() }
-  }, [onClose])
+  }, [])
   return (
-    <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget) closeRef.current() }}>
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={id} ref={ref}>
         <div className="grab" />
         <header><h3 id={id}>{title}</h3><button className="link close" onClick={onClose}>Close</button></header>

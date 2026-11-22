@@ -149,6 +149,8 @@ test('the owner sees today, approves a request and gets a welcome message to sen
   await page.getByRole('button', { name: /Priya Nair/ }).first().click()
   await expect(page.getByText('Old knee injury')).toBeVisible()
   await page.getByRole('button', { name: 'Approve and start a plan' }).click()
+  await expect(page.getByLabel('Paid now in ₹')).toHaveValue('') // never prefilled, so a quick tap records no money
+  await page.getByRole('button', { name: 'Paid in full: ₹1,500' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Approve' }).click()
   await expect(page.getByRole('dialog', { name: 'Send on WhatsApp' })).toBeVisible()
   await expect(page.getByRole('textbox', { name: /^Message/ })).toHaveValue(/Hi Priya, welcome to Forge Fitness! Your Monthly plan runs from .* Paid in full: ₹1,500\./)
@@ -192,7 +194,8 @@ test('a member sees days left and payments', async ({ page }) => {
   } }))
   await page.goto(BASE)
   await expect(page.getByText('Hi Rohan')).toBeVisible()
-  await expect(page.locator('.big')).toContainText('23')
+  await expect(page.locator('.big')).toContainText('22')
+  await expect(page.getByText('days to go')).toBeVisible()
   await expect(page.getByText('receipt 7')).toBeVisible()
   expect(await sideways(page)).toBe(false)
 })

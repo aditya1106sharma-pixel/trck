@@ -8,10 +8,16 @@ import { Choice, Failed, Field, Loading, useBusy } from '../ui/bits'
 
 const DRAFT = (slug: string) => `trck-gym-join:${slug}`
 
+const DRAFT_HOURS = 3 // the form may be on a shared front desk phone, so an old half filled form is dropped
+
 function readDraft(slug: string): JoinForm {
   try {
     const raw = localStorage.getItem(DRAFT(slug))
-    if (raw) return { ...blankJoin(), ...(JSON.parse(raw) as Partial<JoinForm>), website: '' }
+    if (raw) {
+      const d = JSON.parse(raw) as Partial<JoinForm> & { saved_at?: number }
+      if (d.saved_at && Date.now() - d.saved_at < DRAFT_HOURS * 3600000) return { ...blankJoin(), ...d, health: {}, health_note: '', website: '' }
+      localStorage.removeItem(DRAFT(slug))
+    }
   } catch { /* a broken draft starts fresh */ }
   return blankJoin()
 }
@@ -32,7 +38,11 @@ export function Join({ slug }: { slug: string }) {
     joinInfo(slug).then((i) => { setInfo(i); if (i) track('join_viewed', {}, slug) }, (e: Error) => setLoadErr(e.message))
   }
   useEffect(load, [slug])
-  useEffect(() => { try { localStorage.setItem(DRAFT(slug), JSON.stringify({ ...f, website: '' })) } catch { /* no storage, no draft */ } }, [f, slug])
+  // Health answers are never kept in the draft. Contact and about you details are, for a few hours.
+  useEffect(() => {
+    const { health: _h, health_note: _n, website: _w, ...keep } = f
+    try { localStorage.setItem(DRAFT(slug), JSON.stringify({ ...keep, saved_at: Date.now() })) } catch { /* no storage, no draft */ }
+  }, [f, slug])
   useEffect(() => { window.scrollTo(0, 0) }, [step, done])
 
   const set = <K extends keyof JoinForm>(k: K, v: JoinForm[K]) => { setF((x) => ({ ...x, [k]: v })); setErrs((e) => ({ ...e, [k]: undefined })) }
@@ -152,7 +162,7 @@ export function Join({ slug }: { slug: string }) {
           {step > 0 && <button type="button" className="btn ghost" onClick={() => { setErrs({}); setStep(step - 1) }}>Back</button>}
           <button className="btn acc" disabled={busy}>{busy ? 'Sending' : step < 2 ? 'Next' : 'Send request'}</button>
         </div>
-        <p className="xs mut">Your answers are saved on this phone until you send them.</p>
+        <p className="xs mut">Your contact details are kept on this phone for a few hours until you send them. Health answers are not.</p>
       </form>
     </div>
   )

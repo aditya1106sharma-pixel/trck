@@ -1,8 +1,9 @@
 /* TRCK Gym. Same language as TRCK (docs/design-brief.md): ruled lines, condensed numbers, one orange accent.
    Green only means paid or active, amber only means ending or due, red only means overdue or a problem. */
 :root{
-  --bg:#EDEBE6;--raise:#F6F4EF;--ink:#14130F;--mut:#6B6860;--line:#D3D0C8;--acc:#D2410A;--acc-ink:#fff;
-  --ok:#3F7D2B;--warn:#A56A00;--bad:#C2312D;--dim:#DAD7CF;--scrim:rgba(20,19,15,.45);
+  /* Light mode accent, ok and warn are a shade darker than TRCK's so small coloured text passes 4.5:1 on --bg. */
+  --bg:#EDEBE6;--raise:#F6F4EF;--ink:#14130F;--mut:#625F57;--line:#D3D0C8;--acc:#B5380A;--acc-ink:#fff;
+  --ok:#356B24;--warn:#835400;--bad:#B02A26;--dim:#DAD7CF;--scrim:rgba(20,19,15,.45);
   --display:'Big Shoulders Display','Arial Narrow',Impact,sans-serif;
   --body:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
   color-scheme:light;
@@ -94,7 +95,7 @@ button.item:hover .who b{color:var(--acc)}
 .empty{padding:18px 0;color:var(--mut)}
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
-.chip{border:1px solid var(--line);background:none;border-radius:999px;padding:0 14px;min-height:36px;font-size:13px;font-weight:600;white-space:nowrap}
+.chip{border:1px solid var(--line);background:none;border-radius:999px;padding:0 14px;min-height:44px;font-size:13px;font-weight:600;white-space:nowrap}
 .chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .timeline{display:grid}
 .timeline>div{display:grid;grid-template-columns:76px 1fr auto;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:14px;align-items:baseline}
@@ -108,7 +109,7 @@ button.item:hover .who b{color:var(--acc)}
 .btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
 .btn.danger{background:none;color:var(--bad);border:1px solid var(--line)}
 .btn.block{width:100%}
-.btn.sm{min-height:38px;padding:0 12px;font-size:14px}
+.btn.sm{min-height:44px;padding:0 12px;font-size:14px}
 .btn:disabled{opacity:.5;cursor:default}
 .btns{display:flex;gap:8px;flex-wrap:wrap}
 .btns>.btn{flex:1 1 140px}
@@ -136,7 +137,7 @@ button.item:hover .who b{color:var(--acc)}
 .check{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start;padding:8px 0;font-size:15px}
 .check input{width:22px;height:22px;margin:1px 0 0;accent-color:var(--acc)}
 .choice{display:flex;flex-wrap:wrap;gap:8px}
-.choice button{border:1px solid var(--line);background:none;border-radius:999px;min-height:40px;padding:0 14px;font-weight:600;font-size:14px}
+.choice button{border:1px solid var(--line);background:none;border-radius:999px;min-height:44px;padding:0 14px;font-weight:600;font-size:14px}
 .choice button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .notice{border-left:3px solid var(--warn);padding:8px 12px;font-size:14px;background:var(--raise)}
 .notice.bad{border-color:var(--bad)}

@@ -66,7 +66,7 @@ export function Owner({ gymId, role, userId }: { gymId: string; role: 'owner' | 
         <nav className="tabs" aria-label="Sections">
           {tabs.map(([k, label]) => (
             <button key={k} aria-current={tab === k ? 'page' : undefined} onClick={() => go(k)}>
-              {label}{k === 'requests' && pending > 0 && <span className="badge" aria-label={`${pending} waiting`}>{pending}</span>}
+              {label}{k === 'requests' && pending > 0 && <span className="vh">, {pending} waiting</span>}{k === 'requests' && pending > 0 && <span className="badge" aria-hidden="true">{pending}</span>}
             </button>
           ))}
         </nav>
@@ -99,7 +99,7 @@ export function useMessage(): [Msg, (m: Msg) => void, JSX.Element | null] {
     const pays = data.payments.filter((p) => p.client_id === c.id)
     return (
       <MessageSheet gym={data.gym} userId={userId} name={c.full_name} phone={c.phone} consent={c.consent_whatsapp} clientId={c.id}
-        kinds={['renewal', 'expired', 'due', 'welcome', 'portal']} initial={msg.kind} onClose={close}
+        kinds={['renewal', 'expired', 'due', 'welcome', ...(c.email ? ['portal' as const] : [])]} initial={msg.kind} onClose={close}
         vars={() => buildVars({ gym: data.gym, name: c.full_name, email: c.email, link: portalLink, status: msg.row.status, payments: pays })} />
     )
   })() : null

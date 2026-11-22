@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the gym database schema and its access rule tests against a throwaway local Postgres.
-# Needs the Postgres server binaries (initdb, pg_ctl). CI installs them; most Linux boxes have them.
+# Needs the Postgres server binaries (initdb, pg_ctl). GitHub ubuntu runners and most Linux boxes have them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)}"

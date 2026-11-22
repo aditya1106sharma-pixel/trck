@@ -65,11 +65,11 @@ export function ClientHome() {
       <section className="stack">
         <div className="row sp"><h2>Membership</h2>{m && <span className={'pill ' + (s.state === 'active' ? 'ok' : s.state === 'ending' ? 'warn' : s.state === 'expired' ? 'bad' : 'mut')}>{STATE_LABEL[s.state]}</span>}</div>
         {s.state === 'active' || s.state === 'ending' ? <>
-          <div className="big">{s.daysLeft! + 1}<small>{s.daysLeft === 0 ? 'last day' : 'days left'}</small></div>
+          <div className="big">{s.daysLeft}<small>{s.daysLeft === 0 ? 'last day today' : s.daysLeft === 1 ? 'day to go' : 'days to go'}</small></div>
           <div className="rail"><i style={{ width: `${total ? Math.round((used / total) * 100) : 0}%` }} /></div>
           <div className="row sp sm mut"><span>{m!.plan_name} · from {fmtDate(m!.start_date, true)}</span><span>ends {fmtDate(s.coveredThrough)}</span></div>
           {s.state === 'ending' && <p className="notice">Your plan ends {endsInWords(s.daysLeft!)}. Renew at the front desk to keep going.</p>}
-        </> : s.state === 'upcoming' ? <p>Your {s.latest!.plan_name} plan starts on {fmtDate(home.memberships.find((x) => x.start_date > today)?.start_date)}.</p>
+        </> : s.state === 'upcoming' ? <p>Your {s.latest!.plan_name} plan starts on {fmtDate(home.memberships.find((x) => x.status === 'active' && x.start_date > today)?.start_date)}.</p>
           : s.state === 'expired' ? <p>Your {m!.plan_name} plan ended on {fmtDate(m!.end_date)}. Renew at the front desk whenever you are ready.</p>
           : <p className="mut">No plan yet. Choose one at the front desk.</p>}
         <div className="kv">
