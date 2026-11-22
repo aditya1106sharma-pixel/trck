@@ -155,3 +155,59 @@ select approve_join_request(:'req2', :'monthly', '2026-04-01', 1600) as again \g
 select t.eq((:'again'::jsonb->>'client_id'), :'client1', 'same phone reuses the client');
 select t.fails(format($$select reject_join_request(%L)$$, :'req2'), 'already handled');
 reset role;
+select t.eq((select goal from clients where id = :'client1'), 'Build muscle', 'a returning member keeps what staff had');
+select t.eq((select email from clients where id = :'client1'), 'sneaky@x.com', 'the form never changes a member email');
+
+-- ------------------------------------------------ fixes from the first db-guard review
+-- Bad booleans give a friendly error, not a raw cast error.
+set request.jwt.claims = '';
+set role anon;
+select t.fails($$select submit_join_request('forge', '{"full_name":"A B","phone":"+919222222222","consent_terms":"yes"}')$$, 'not valid');
+select t.fails(format($$select insights(%L, 30)$$, :'gym_a'), 'permission denied');
+select t.fails($$select my_home()$$, 'permission denied');
+select t.fails(format($$select add_payment(%L, null, 100, 'cash')$$, :'client1'), 'permission denied');
+select log_error('join page broke', 'stack', '/gym/#/join', 'ua', '0.1.0', 'forge');
+select submit_join_request('forge', '{"full_name":"Meera Joshi","phone":"+919333333333","consent_terms":true}') as req3 \gset
+reset role;
+select t.eq((select gym_id from app_errors where message = 'join page broke'), :'gym_a'::uuid, 'join page errors belong to the gym in the link');
+select t.fails($$insert into join_requests (gym_id, full_name, phone, consent_terms) select gym_id, 'Meera Joshi', phone, true from join_requests where phone = '+919333333333'$$, 'duplicate key');
+
+-- Another gym sees none of ours.
+set request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-000000000003"}';
+set role authenticated;
+select t.eq((select count(*) from clients), 0::bigint, 'gym B: no clients of A');
+select t.eq((select count(*) from memberships), 0::bigint, 'gym B: no plans of A');
+select t.eq((select count(*) from payments), 0::bigint, 'gym B: no payments of A');
+select t.eq((select count(*) from messages), 0::bigint, 'gym B: no messages of A');
+select t.eq((select count(*) from events), 0::bigint, 'gym B: no events of A');
+select t.eq((select count(*) from activity where gym_id = :'gym_a'), 0::bigint, 'gym B: no audit rows of A');
+select t.eq((select count(*) from app_errors), 0::bigint, 'gym B: no errors of A');
+select t.eq(jsonb_array_length(insights(:'gym_b', 30)->'errors'), 0, 'gym B insights show no errors of A');
+select t.fails(format($$insert into messages (gym_id, client_id, kind, channel, body) values (%L, %L, 'x', 'copy', 'x')$$, :'gym_b', :'client1'), 'row-level security');
+reset role;
+
+-- Staff cannot manage staff. Owners invite by email only.
+insert into clients (gym_id, full_name, phone) values (:'gym_b', 'Other Member', '+919444444444') returning id as client_b \gset
+set request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-000000000002"}';
+set role authenticated;
+select t.fails(format($$insert into staff (gym_id, email, role) values (%L, 'new@a.com', 'staff')$$, :'gym_a'), 'row-level security');
+select t.eq((select count(*) from events), 0::bigint, 'staff cannot read events');
+select t.fails(format($$insert into messages (gym_id, client_id, kind, channel, body) values (%L, %L, 'x', 'copy', 'x')$$, :'gym_a',   :'client_b'), 'row-level security');
+reset role;
+set request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-000000000001"}';
+set role authenticated;
+insert into staff (gym_id, email, role, name) values (:'gym_a', 'coach@a.com', 'owner', 'Coach');
+select t.fails(format($$insert into staff (gym_id, email, role, created_at) values (%L, 'sneak@a.com', 'owner', '2000-01-01')$$, :'gym_a'), 'permission denied');
+select t.fails(format($$insert into staff (gym_id, email, role, user_id) values (%L, 'sneak2@a.com', 'owner', 'a0000000-0000-0000-0000-000000000004')$$, :'gym_a'), 'permission denied');
+delete from staff where email = 'coach@a.com';
+select t.eq((select count(*) from staff where email = 'coach@a.com'), 0::bigint, 'owner can remove staff');
+select t.eq(jsonb_array_length(insights(:'gym_a', 30)->'errors'), 1, 'owner A sees the join page error');
+-- Cancelling twice keeps the first reason, and a cancelled plan takes no money.
+select cancel_membership((:'renewed'::jsonb->>'membership_id')::uuid, 'Wrong plan');
+select cancel_membership((:'renewed'::jsonb->>'membership_id')::uuid, 'Second reason');
+select t.fails(format($$select add_payment(%L, %L, 100, 'cash')$$, :'client1', (:'renewed'::jsonb->>'membership_id')), 'cancelled');
+select reject_join_request(:'req3', 'Duplicate');
+select t.fails(format($$select add_membership(%L, %L, '2026-05-01', 2000000)$$, :'client1', :'monthly'), 'check the price');
+reset role;
+select t.eq((select cancel_reason from memberships where id = (:'renewed'::jsonb->>'membership_id')::uuid), 'Wrong plan', 'first cancel reason kept');
+select t.eq((select status from join_requests where id = :'req3'), 'rejected', 'request declined');

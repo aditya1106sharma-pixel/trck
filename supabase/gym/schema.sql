@@ -74,6 +74,8 @@ create table public.join_requests (
   created_at timestamptz not null default now()
 );
 create index join_requests_gym_status on public.join_requests (gym_id, status, created_at desc);
+-- Two taps arriving together still make one request.
+create unique index join_requests_one_pending on public.join_requests (gym_id, phone) where status = 'pending';
 
 create table public.clients (
   id uuid primary key default gen_random_uuid(),
@@ -177,6 +179,7 @@ create table public.app_errors (
   created_at timestamptz not null default now()
 );
 create index app_errors_time on public.app_errors (created_at desc);
+create index events_time on public.events (created_at);
 
 create table public.activity (
   id bigint generated always as identity primary key,
@@ -268,12 +271,14 @@ alter table public.activity enable row level security;
 -- Anyone not signed in gets no table access at all. They use join_info() and submit_join_request().
 revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
+-- Row level security does not cover these, so signed in people do not get them at all.
+revoke truncate, references, trigger on all tables in schema public from authenticated;
 
 create policy gyms_read on public.gyms for select to authenticated using (is_staff(id));
 create policy gyms_owner_update on public.gyms for update to authenticated using (is_owner(id)) with check (is_owner(id));
 
 create policy staff_read on public.staff for select to authenticated using (is_staff(gym_id));
-create policy staff_owner_insert on public.staff for insert to authenticated with check (is_owner(gym_id));
+create policy staff_owner_insert on public.staff for insert to authenticated with check (is_owner(gym_id) and user_id is null);
 create policy staff_owner_update on public.staff for update to authenticated using (is_owner(gym_id)) with check (is_owner(gym_id));
 create policy staff_owner_delete on public.staff for delete to authenticated using (is_owner(gym_id));
 
@@ -291,17 +296,22 @@ create policy memberships_read on public.memberships for select to authenticated
 create policy payments_read on public.payments for select to authenticated using (is_staff(gym_id));
 
 create policy messages_read on public.messages for select to authenticated using (is_staff(gym_id));
-create policy messages_insert on public.messages for insert to authenticated with check (is_staff(gym_id) and sent_by = auth.uid());
+create policy messages_insert on public.messages for insert to authenticated with check (
+  is_staff(gym_id) and sent_by = auth.uid()
+  and (client_id is null or exists (select 1 from clients c where c.id = client_id and c.gym_id = messages.gym_id))
+  and (request_id is null or exists (select 1 from join_requests r where r.id = request_id and r.gym_id = messages.gym_id)));
 
 create policy events_owner_read on public.events for select to authenticated using (is_owner(gym_id));
-create policy errors_owner_read on public.app_errors for select to authenticated
-  using (exists (select 1 from staff where user_id = auth.uid() and role = 'owner'));
+create policy errors_owner_read on public.app_errors for select to authenticated using (is_owner(gym_id));
 create policy activity_owner_read on public.activity for select to authenticated using (is_owner(gym_id));
 
 -- Staff may only change a client's details, never who the client's account is.
 revoke update on public.clients from authenticated;
 grant update (full_name, phone, email, dob, gender, goal, emergency_name, emergency_phone, source, health_note,
   consent_whatsapp, notes, archived) on public.clients to authenticated;
+-- Owners invite by email only. They cannot set who the account is or backdate a row to become the main owner.
+revoke insert on public.staff from authenticated;
+grant insert (gym_id, email, role, name) on public.staff to authenticated;
 revoke update on public.staff from authenticated;
 grant update (role, name) on public.staff to authenticated;
 revoke update on public.gyms from authenticated;
@@ -311,7 +321,7 @@ grant update (name, phone, address, templates, join_open) on public.gyms to auth
 
 -- Every function starts closed. The grants at the end open exactly the ones each kind of person needs.
 
--- Run by Aditya in the SQL editor, never from the app. Makes the gym, its first owner and three starter plans.
+-- Run by Aditya in the SQL editor, never from the app. Makes the gym, its first owner and four starter plans.
 create function public.setup_gym(p_slug text, p_name text, p_owner_email text, p_phone text default null)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare g uuid;
@@ -356,7 +366,10 @@ begin
   if v_emph is not null and v_emph !~ '^\+[1-9][0-9]{7,14}$' then raise exception 'Check the emergency contact number.' using errcode = 'P0001'; end if;
   if v_email is not null and v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'Check the email address.' using errcode = 'P0001'; end if;
   if coalesce(length(clean_text(p->>'full_name', 80)), 0) < 2 then raise exception 'Add your full name.' using errcode = 'P0001'; end if;
-  if coalesce((p->>'consent_terms')::boolean, false) is not true then raise exception 'Please agree to the gym terms.' using errcode = 'P0001'; end if;
+  if coalesce(p->>'consent_terms', '') not in ('true', 'false', '') or coalesce(p->>'consent_whatsapp', '') not in ('true', 'false', '') then
+    raise exception 'The form is not valid.' using errcode = 'P0001';
+  end if;
+  if coalesce(p->>'consent_terms', '') <> 'true' then raise exception 'Please agree to the gym terms.' using errcode = 'P0001'; end if;
   if jsonb_typeof(v_health) <> 'object' or (select count(*) from jsonb_object_keys(v_health)) > 12
      or exists (select 1 from jsonb_each(v_health) e where jsonb_typeof(e.value) <> 'boolean' or length(e.key) > 40) then
     raise exception 'The health answers are not valid.' using errcode = 'P0001';
@@ -385,9 +398,14 @@ begin
   values (g.id, clean_text(p->>'full_name', 80), v_phone, v_email, v_dob, clean_text(p->>'gender', 20), clean_text(p->>'goal', 40),
     clean_text(p->>'emergency_name', 80), v_emph, clean_text(p->>'source', 80), v_plan, v_health,
     exists (select 1 from jsonb_each(v_health) e where e.value = 'true'::jsonb), clean_text(p->>'health_note', 300),
-    true, coalesce((p->>'consent_whatsapp')::boolean, false))
+    true, coalesce(p->>'consent_whatsapp', '') = 'true')
   returning id into rid;
   return rid;
+exception when unique_violation then
+  -- The same phone was sent twice at the same moment: hand back the request that won.
+  select id into existing from join_requests where gym_id = g.id and phone = v_phone and status = 'pending' limit 1;
+  if existing is null then raise; end if;
+  return existing;
 end $$;
 
 -- Who the signed in person is. Links an invited staff email, or a client record with the same verified email.
@@ -455,7 +473,7 @@ begin
   select * into pl from plans where id = p_plan and gym_id = p_gym;
   if not found then raise exception 'Pick a plan.' using errcode = 'P0001'; end if;
   if p_start is null then raise exception 'Pick a start date.' using errcode = 'P0001'; end if;
-  if p_price is null or p_price < 0 then raise exception 'Check the price.' using errcode = 'P0001'; end if;
+  if p_price is null or p_price < 0 or p_price > 1000000 then raise exception 'Check the price.' using errcode = 'P0001'; end if;
   if coalesce(p_paid, 0) < 0 then raise exception 'Check the amount paid.' using errcode = 'P0001'; end if;
   if coalesce(p_paid, 0) > p_price then raise exception 'Amount paid is more than the price.' using errcode = 'P0001'; end if;
   insert into memberships (gym_id, client_id, plan_id, plan_name, start_date, end_date, price, note, created_by)
@@ -492,9 +510,11 @@ begin
     returning id into cid;
   else
     -- Returning member: fill gaps and refresh health answers and consent, keep everything staff already wrote.
+    -- The email is never taken from the form here: anyone can type a member's phone, and the email decides whose
+    -- Google account sees the member's page. Staff add or change it by hand on the client's page.
     update clients set
-      email = coalesce(email, r.email), dob = coalesce(dob, r.dob), gender = coalesce(gender, r.gender), goal = coalesce(r.goal, goal),
-      emergency_name = coalesce(r.emergency_name, emergency_name), emergency_phone = coalesce(r.emergency_phone, emergency_phone),
+      dob = coalesce(dob, r.dob), gender = coalesce(gender, r.gender), goal = coalesce(goal, r.goal),
+      emergency_name = coalesce(emergency_name, r.emergency_name), emergency_phone = coalesce(emergency_phone, r.emergency_phone),
       health = r.health, health_flag = r.health_flag, health_note = r.health_note, consent_whatsapp = r.consent_whatsapp, archived = false
     where id = cid;
   end if;
@@ -542,6 +562,7 @@ begin
   if p_membership is not null then
     select * into m from memberships where id = p_membership and client_id = p_client for update;
     if not found then raise exception 'Plan not found.' using errcode = 'P0001'; end if;
+    if m.status = 'cancelled' then raise exception 'This plan was cancelled. Record the payment against another plan.' using errcode = 'P0001'; end if;
     select coalesce(sum(amount), 0) into already from payments where membership_id = m.id and not voided;
     if already + p_amount > m.price then
       raise exception 'That is more than what is due on this plan (Rs %).', m.price - already using errcode = 'P0001';
@@ -570,12 +591,14 @@ declare m memberships%rowtype;
 begin
   select * into m from memberships where id = p_membership for update;
   if not found or not is_owner(m.gym_id) then raise exception 'Only the owner can cancel a plan.' using errcode = 'P0001'; end if;
+  if m.status = 'cancelled' then return; end if;
   if clean_text(p_reason, 200) is null then raise exception 'Say why it is being cancelled.' using errcode = 'P0001'; end if;
   update memberships set status = 'cancelled', cancel_reason = clean_text(p_reason, 200) where id = m.id;
 end $$;
 
 -- Usage events from the app. Anyone may send join page events, signed in staff and clients may send the rest.
--- Unknown names are dropped, and a flood is capped, so this can never fill the free database.
+-- Unknown names are dropped, each gym is capped per hour, the whole table is capped, and rows older than 180 days
+-- are pruned, so even a deliberate flood stays far below the free 500 MB.
 create function public.track(p_name text, p_props jsonb default '{}'::jsonb, p_slug text default null, p_anon text default null) returns void
 language plpgsql security definer set search_path = public as $$
 declare
@@ -593,21 +616,30 @@ begin
     return;
   end if;
   if g is null then return; end if;
-  if p_props is null or jsonb_typeof(p_props) <> 'object' or length(p_props::text) > 1000 then p_props := '{}'::jsonb; end if;
-  if (select count(*) from events where gym_id = g and created_at > now() - interval '1 hour') >= 2000 then return; end if;
+  if p_props is null or jsonb_typeof(p_props) <> 'object' or length(p_props::text) > 300 then p_props := '{}'::jsonb; end if;
+  if random() < 0.01 then delete from events where created_at < now() - interval '180 days'; end if;
+  if (select reltuples from pg_class where oid = 'public.events'::regclass) > 100000 then return; end if;
+  if (select count(*) from events where gym_id = g and created_at > now() - interval '1 hour') >= 300 then return; end if;
   insert into events (gym_id, name, props, user_id, anon_id) values (g, p_name, p_props, auth.uid(), left(p_anon, 40));
 end $$;
 
 -- Crashes and failed requests from the app, for the owner's Insights screen and for debugging with Claude.
+-- Capped per hour and in total, pruned after 90 days, and tied to a gym so owners only ever see their own.
 create function public.log_error(p_message text, p_stack text default null, p_url text default null,
-  p_user_agent text default null, p_version text default null) returns void
+  p_user_agent text default null, p_version text default null, p_slug text default null) returns void
 language plpgsql security definer set search_path = public as $$
 declare g uuid;
 begin
-  if (select count(*) from app_errors where created_at > now() - interval '1 hour') >= 200 then return; end if;
-  if auth.uid() is not null then select gym_id into g from staff where user_id = auth.uid() limit 1; end if;
+  if random() < 0.02 then delete from app_errors where created_at < now() - interval '90 days'; end if;
+  if (select reltuples from pg_class where oid = 'public.app_errors'::regclass) > 20000 then return; end if;
+  if (select count(*) from app_errors where created_at > now() - interval '1 hour') >= 100 then return; end if;
+  if auth.uid() is not null then
+    select gym_id into g from staff where user_id = auth.uid() limit 1;
+    if g is null then select gym_id into g from clients where user_id = auth.uid() limit 1; end if;
+  end if;
+  if g is null and p_slug is not null then select id into g from gyms where slug = lower(p_slug); end if;
   insert into app_errors (gym_id, message, stack, url, user_agent, app_version, user_id)
-  values (g, left(coalesce(p_message, 'unknown'), 500), left(p_stack, 4000), left(p_url, 300), left(p_user_agent, 300), left(p_version, 40), auth.uid());
+  values (g, left(coalesce(p_message, 'unknown'), 300), left(p_stack, 1000), left(p_url, 200), left(p_user_agent, 200), left(p_version, 40), auth.uid());
 end $$;
 
 -- Event counts for the Insights screen, for the last p_days days.
@@ -621,7 +653,7 @@ begin
     'visitors', (select count(distinct anon_id) from events where gym_id = p_gym and name = 'join_viewed'
       and created_at > now() - make_interval(days => least(greatest(p_days, 1), 365))),
     'errors', coalesce((select jsonb_agg(e order by e.created_at desc) from (
-      select id, message, url, app_version, created_at from app_errors where gym_id = p_gym or gym_id is null
+      select id, message, url, app_version, created_at from app_errors where gym_id = p_gym
       order by created_at desc limit 20) e), '[]'::jsonb));
 end $$;
 
@@ -629,7 +661,7 @@ end $$;
 
 revoke execute on all functions in schema public from public, anon, authenticated;
 grant execute on function public.join_info(text), public.submit_join_request(text, jsonb),
-  public.track(text, jsonb, text, text), public.log_error(text, text, text, text, text) to anon, authenticated;
+  public.track(text, jsonb, text, text), public.log_error(text, text, text, text, text, text) to anon, authenticated;
 grant execute on function public.is_staff(uuid), public.is_owner(uuid), public.gym_today(uuid), public.membership_end(date, int, int),
   public.whoami(), public.my_home(), public.approve_join_request(uuid, uuid, date, int, int, text, date, text),
   public.reject_join_request(uuid, text), public.add_membership(uuid, uuid, date, int, int, text, date, text),

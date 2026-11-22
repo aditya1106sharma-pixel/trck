@@ -27,6 +27,7 @@ When it is done, the app lives at `https://<your-github-name>.github.io/trck/gym
    `https://<project-ref>.supabase.co/auth/v1/callback` (the project ref is in your Supabase URL).
 4. Copy the Client ID and Client secret.
 5. In Supabase: **Authentication, Sign In / Providers, Google**: enable, paste both, save.
+   Then open **Email** on the same page and turn it **off**. Google is the only way in. Leaving email sign up on would let someone register with the owner's address if email confirmation were ever switched off.
 6. In Supabase: **Authentication, URL Configuration**:
    - Site URL: `https://<your-github-name>.github.io/trck/gym/`
    - Redirect URLs: add the same address, and `http://localhost:5174/**` for local testing.

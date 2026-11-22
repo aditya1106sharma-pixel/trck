@@ -26,11 +26,11 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
 }
 
 /** Reads a whole table the signed in person may see, 1000 rows at a time, so nothing is cut off as the gym grows. */
-async function all<T>(table: string, order: string, ascending = true): Promise<T[]> {
+async function all<T>(table: string, gymId: string, order: string, ascending = true): Promise<T[]> {
   if (!sb) return []
   const out: T[] = []
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await sb.from(table).select('*').order(order, { ascending }).order('id').range(from, from + 999)
+    const { data, error } = await sb.from(table).select('*').eq('gym_id', gymId).order(order, { ascending }).order('id').range(from, from + 999)
     if (error) {
       if (!isNetworkError(error.message)) void logError(`read ${table}: ${error.message}`, error.code)
       throw new Error(friendlyError(error))
@@ -108,14 +108,14 @@ export async function loadGym(gymId: string): Promise<GymData> {
   const g = await sb.from('gyms').select('*').eq('id', gymId).single()
   if (g.error) throw new Error(friendlyError(g.error))
   const [plans, staff, requests, clients, memberships, payments] = await Promise.all([
-    all<Plan>('plans', 'sort'), all<Staff>('staff', 'created_at'), all<JoinRequest>('join_requests', 'created_at', false),
-    all<Client>('clients', 'full_name'), all<Membership>('memberships', 'start_date'), all<Payment>('payments', 'paid_on', false),
+    all<Plan>('plans', gymId, 'sort'), all<Staff>('staff', gymId, 'created_at'), all<JoinRequest>('join_requests', gymId, 'created_at', false),
+    all<Client>('clients', gymId, 'full_name'), all<Membership>('memberships', gymId, 'start_date'), all<Payment>('payments', gymId, 'paid_on', false),
   ])
   return { gym: g.data as Gym, plans, staff, requests, clients, memberships, payments }
 }
 
 export interface PlanInput { plan: string; start: string; price: number; paid: number; method: Method | null; paidOn: string; note: string }
-const planArgs = (i: PlanInput) => ({ p_plan: i.plan, p_start: i.start, p_price: i.price, p_paid: i.paid, p_method: i.paid > 0 ? i.method : null, p_paid_on: i.paidOn, p_note: i.note || null })
+const planArgs = (i: PlanInput) => ({ p_plan: i.plan, p_start: i.start, p_price: i.price, p_paid: i.paid, p_method: i.paid > 0 ? i.method : null, p_paid_on: i.paid > 0 ? i.paidOn : null, p_note: i.note || null })
 
 export const approveRequest = (requestId: string, i: PlanInput) =>
   rpc<{ client_id: string; membership_id: string; payment_id: string | null }>('approve_join_request', { p_request: requestId, ...planArgs(i) })
@@ -166,7 +166,7 @@ export const insights = (gymId: string, days = 30) => rpc<Insights>('insights', 
 /** Everything the owner can see, as one JSON file. Their own copy, in case anything ever goes wrong. */
 export async function backup(gymId: string): Promise<Record<string, unknown>> {
   const d = await loadGym(gymId)
-  const messages = await all<Message>('messages', 'created_at')
+  const messages = await all<Message>('messages', gymId, 'created_at')
   return { exported_at: new Date().toISOString(), app_version: VERSION, ...d, messages }
 }
 
@@ -186,13 +186,16 @@ export function track(name: string, props: Record<string, unknown> = {}, slug?: 
   sb.rpc('track', { p_name: name, p_props: props, p_slug: slug ?? null, p_anon: anonId() }).then(() => undefined, () => undefined)
 }
 
+/** On the public join page there is no sign in, so the gym comes from the link. */
+const joinSlug = (): string | null => /^#\/join\/([a-z0-9-]+)/.exec(window.location.hash)?.[1] ?? null
+
 const sentErrors = new Set<string>()
 /** Saves an app error for the owner's Insights screen and for debugging with Claude. At most 20 different ones per visit. */
 export async function logError(message: string, stack?: string | null): Promise<void> {
   if (!sb || sentErrors.has(message) || sentErrors.size >= 20) return
   sentErrors.add(message)
   try {
-    await sb.rpc('log_error', { p_message: message.slice(0, 500), p_stack: stack?.slice(0, 4000) ?? null, p_url: window.location.pathname + window.location.hash.split('/').slice(0, 2).join('/'), p_user_agent: navigator.userAgent.slice(0, 300), p_version: VERSION })
+    await sb.rpc('log_error', { p_message: message.slice(0, 500), p_stack: stack?.slice(0, 4000) ?? null, p_url: window.location.pathname + window.location.hash.split('/').slice(0, 2).join('/'), p_user_agent: navigator.userAgent.slice(0, 300), p_version: VERSION, p_slug: joinSlug() })
   } catch { /* nothing more we can do */ }
 }
 

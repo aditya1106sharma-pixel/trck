@@ -215,6 +215,7 @@ function RequestDetail({ id }: { id: string }) {
         <p className="sm mut">Sent {fmtDate(r.created_at.slice(0, 10))}{r.email ? ' · ' + r.email : ' · no email, so they cannot sign in yet'}</p>
         {r.status !== 'pending' && <p className={'notice ' + (r.status === 'approved' ? 'ok' : '')}>{r.status === 'approved' ? 'Approved' : 'Declined'} on {fmtDate(r.decided_at?.slice(0, 10))}{r.reject_reason ? `: ${r.reject_reason}` : ''}</p>}
         {existing && r.status === 'pending' && <p className="notice">This phone already belongs to {existing.client.full_name}. Approving adds the new plan to that member.</p>}
+        {existing && r.status === 'pending' && r.email && r.email !== existing.client.email && <p className="notice">The form says {r.email}, but {existing.client.full_name}'s record has {existing.client.email ?? 'no email'}. Approving does not change it. If this really is them, edit the email on their page so they can sign in.</p>}
       </section>
       <section>
         <div className="timeline">
